@@ -1,5 +1,6 @@
 import numpy as np
 from numpy import random
+from numpy.linalg import inv
 import numpy.matlib
 import math
 import matplotlib.pyplot as plt
@@ -10,8 +11,10 @@ import scipy.linalg as LA
 def angleWrap(ang):
 	if ang > np.pi:
 		return ang - 2 * np.pi
-	else:
+	elif ang < -np.pi:
 		return ang + 2 * np.pi
+	else:
+		return ang
 
 def tcomp(tab, tbc):
 	# print("oi", tab, tbc)
@@ -74,7 +77,8 @@ def simulateWorld(k):
 
 def doObservationModel(xVeh, iFeature, Map):
 	Delta = Map[:, iFeature].reshape(2, 1) - xVeh[0:2]
-	z = np.array([LA.norm(Delta), np.arctan2(Delta[1], Delta[0]) - xVeh[2]]).reshape(2, 1)
+	at = np.arctan2(Delta[1], Delta[0]) - xVeh[2] # Evitar incluir array dentro de array
+	z = np.array([LA.norm(Delta), at[0]]).reshape(2, 1)
 	z[1] = angleWrap(z[1])
 	return z
 
@@ -105,17 +109,26 @@ def GetObservation(k):
 		iFeature = -1
 	else:
 		iFeature = int(np.floor(Map[0].size * np.random.uniform()))
-		z = doObservationModel(XTrue, iFeature, Map) + np.sqrt(np.diag(RTrue)).reshape(2, 1) * random.normal(0, 1, size = (2, 1))
+		z = doObservationModel(XTrue, iFeature, Map)# + np.sqrt(np.diag(RTrue)).reshape(2, 1) * random.normal(0, 1, size = (2, 1))
 		z[1] = angleWrap(z[1])
 	return z, iFeature
 
+def DoGraphs():
+	plt.axis([-80, 80, -80, 80])
+	plt.title('Localisation')
+	plt.scatter(Map[0, :], Map[1, :], color = 'green')
+	DrawRobot(x)
+	plt.pause(0.001)
 
+###################################################################### EXECUÇÃO
 nSteps = 6000
 
 Map = 140 * np.random.uniform(size = (2, 10)) - 70
 
-UTrue = np.diag([0.01, 0.01, 1 * np.pi / 180])**2
-RTrue = np.diag([2, 3 * np.pi / 180])**2
+# UTrue = np.diag([0.01, 0.01, 1 * np.pi / 180])**2
+UTrue = np.diag([0, 0, 0])**2
+# RTrue = np.diag([2, 3 * np.pi / 180])**2
+RTrue = np.diag([0, 0])**2
 
 UEst = 1 * UTrue
 REst = 1 * RTrue
@@ -134,30 +147,26 @@ for k in range(1, nSteps):
 	simulateWorld(k)
 	xOdomNow = GetOdometry(k)
 	u = tcomp(tinv(xOdomLast), xOdomNow)
-	xOdomLast = xOdomNow
+	xOdomLast = np.copy(xOdomNow)
 
 	print(k)
-
-	XPred = tcomp(XEst, u)
+	XPred = tcomp(XEst, u) 
 	XPred[2] = angleWrap(XPred[2])
 	PPred = J1(XEst, u).dot(PEst).dot(J1(XEst, u).T) + J2(XEst, u).dot(UEst).dot(J2(XEst, u).T)
-
 	z, iFeature = GetObservation(k)
 
 	if z.size != 0:
 		zPred = doObservationModel(XPred, iFeature, Map)
-
 		jH = GetObsJac(XPred, iFeature, Map)
 
 		innov = z - zPred
 		innov[1] = angleWrap(innov[1])
 
 		S = jH.dot(PPred).dot(jH.T) + REst
-
-		W = PPred.dot(jH.T).dot(S**-1)
+		S = S.astype('float')
+		W = PPred.dot(jH.T).dot(inv(S))
 
 		XEst = XPred + W.dot(innov)
-		# print(k, XEst, W, innov)
 		XEst[2] = angleWrap(XEst[2])
 		XEst = XEst.astype('float')
 
@@ -170,14 +179,12 @@ for k in range(1, nSteps):
 		XEst = np.copy(XPred)
 		PEst = np.copy(PPred)
 		innov = np.empty((2, 1))
-		S = np.eye(2) * None
+		# S = np.eye(2) * None
 
 
-	# plt.axis([-80, 80, -80, 80])
-	# plt.title('Localisation')
-	# plt.scatter(Map[0, :], Map[1, :], color = 'green')
+	# DoGraphs()
+	
 
-	# DrawRobot(x)
-	# plt.pause(0.001)
+	
 
-# plt.show()
+plt.show()
