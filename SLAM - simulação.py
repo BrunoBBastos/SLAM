@@ -140,9 +140,9 @@ def DoGraphics():
 	plt.plot(Map[0, :], Map[1, :], 'g+')
 	DoVehicleGraphics(xVehicleTrue, 'black')
 	DoVehicleGraphics(xEst[0:3, 0:3], 'blue')
-	PlotEllipse(xEst[0:3], PEst[0:3][0:3], 3)
+	PlotEllipse(xEst[0:3], PEst[0:3][0:3], 5)
 	if len(xEst) > 3:
-		DoMapGraphics(xEst[3:], PEst[3:,3:], 3)
+		DoMapGraphics(xEst[3:], PEst[3:,3:], 5)
 
 	plt.pause(0.0000002)
 
@@ -218,7 +218,7 @@ xVehicleTrue = np.array([[0],[0], [-np.pi / 2]])
 
 xEst = np.copy(xVehicleTrue)
 PEst = np.diag([1, 1, 0.01])
-# PEst = np.diag([0, 0, 0.0])
+# PEst = np.diag([10, 10, 0.1])
 
 MappedFeatures = np.ones([nFeatures, 2]) * -1
 xOdomLast = GetOdometry(0)

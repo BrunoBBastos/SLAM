@@ -1,0 +1,1 @@
+Coleção de códigos para testes específicos, como a simulação de sensores e ambientes no contexto da localização e/ou mapeamento.
