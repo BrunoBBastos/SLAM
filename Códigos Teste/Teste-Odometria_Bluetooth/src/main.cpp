@@ -20,7 +20,7 @@ volatile long pulsosR = 0, pulsosL = 0;
 float x = 0.0, y = 0.0, theta = 0.0;
 
 ////////////////////////////////////////////////////// Testes
-long tPrev;
+float k1 = 0.850, k2 = 0.20;
 
 ////////////////////////////////////////////////////// Protótipos
 
@@ -32,6 +32,9 @@ void odometria();
 float angleWrap(float ang);
 void bluetoothControl();
 void printOdom();
+void mover(float Xref, float Yref);
+void controleRef(float Xref, float Yref, float ctrl[2]);
+
 
 ////////////////////////////////////////////////////// SETUP
 
@@ -57,6 +60,7 @@ void setup() {
   Serial.print("Acionando motor\nEnvie qqr coisa para parar \n");
   while(Serial.available() != 0) Serial.read();
 
+// PRA FRENTE:
 //  digitalWrite(MLA, 1);
 //  digitalWrite(MLB, 0);
 //  digitalWrite(MRA, 0);
@@ -64,20 +68,16 @@ void setup() {
 
   MsTimer2::set(dt*1000, odometria);
   MsTimer2::start();
-//  tPrev = millis();
 }
+
+////////////////////////////////////////////////////// LOOP
 
 void loop() {
   // put your main code here, to run repeatedly:
+  mover(100, 0);
   if(Serial.available() > 0)
   {
-    
     bluetoothControl();
-      
-//    digitalWrite(MLA, 0);
-//  
-//    digitalWrite(MRB, 0);
-//    printOdom();
   }
 }
 
@@ -249,4 +249,68 @@ void printOdom()
   Serial.println(y);
   Serial.println(theta);
   Serial.println();
+}
+
+void controleRef(float Xref, float Yref, float ctrl[2])
+{
+  float dY = (Yref - y);
+  float dX = (Xref - x);
+  float THETAref = atan2(dY, dX);
+  THETAref = angleWrap(THETAref);
+
+  float erroAngular = THETAref - theta;
+  float erroLinear = sqrt(pow(dX, 2) + pow(dY, 2)) * cos(erroAngular);
+
+  float v = k1 * erroLinear;
+  float w = k2 * erroAngular;
+  // Serial.print(erroAngular);
+  // Serial.print(" ");
+  // Serial.println(erroLinear);
+  ctrl [0] = v + w;
+  ctrl [1] = v - w;
+}
+
+void mover(float Xref, float Yref)
+{
+  if (sqrt(pow(Xref - x, 2) + pow(Yref- y, 2)) < 50)
+  {
+    Serial.println("Chegou");
+    digitalWrite(MLA, 0);
+    digitalWrite(MLB, 0);
+    digitalWrite(MRA, 0);
+    digitalWrite(MRB, 0);
+    return;
+  }
+
+  float ctrl[2];
+  controleRef(Xref, Yref, ctrl);
+  ctrl[0] = int(constrain(ctrl[0], -255, 255));
+  ctrl[1] = int(constrain(ctrl[1], -255, 255));
+
+  // Serial.print(ctrl[0]);
+  // Serial.print(' ');
+  // Serial.println(ctrl[1]);
+
+  if (ctrl[0] > 0)
+  {
+    analogWrite(MLA, abs(ctrl[0]));
+    digitalWrite(MLB, 0);
+  }
+  else
+  {
+    digitalWrite(MLA, 0);
+    analogWrite(MLB,  abs(ctrl[0]));
+  }
+
+  if (ctrl[1] > 0)
+  {
+    digitalWrite(MRA, 0);
+    analogWrite(MRB, abs(ctrl[1]));
+  }
+  else
+  {
+    analogWrite(MRA, abs(ctrl[1]));
+    digitalWrite(MRB,  0);
+  }
+
 }
