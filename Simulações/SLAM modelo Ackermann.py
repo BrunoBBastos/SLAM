@@ -75,8 +75,12 @@ for k in range(nSteps):
 # control is a wiggle at constant velocity
 	u = np.array([1, np.pi/5 * np.sin(4 * np.pi * k/nSteps)]).reshape(2, 1)
 # calculate jacobians
-	JacFx = np.array([[1, 0, -dT * u[0] * np.sin(x[2])], [0, 1, dT * u[0] * np.cos(x[2])], [0, 0, 1]], dtype = float)
-	JacFu = np.array([[dT * np.cos(x[2]), 0], [dT * np.sin(x[2]), 0], [dT * np.tan(u[1]) / L, dT * u[0] * (1 / np.cos(u[1])**2)]], dtype = float)
+	JacFx = np.array([[1, 0, -dT * u[0] * np.sin(x[2])],
+					  [0, 1, dT * u[0] * np.cos(x[2])],
+					  [0, 0, 1]], dtype = float)
+	JacFu = np.array([[dT * np.cos(x[2]), 0],
+					  [dT * np.sin(x[2]), 0],
+					  [dT * np.tan(u[1]) / L, dT * u[0] * (1 / np.cos(u[1])**2)]], dtype = float)
 # prediction steps
 	P = JacFx.dot(P).dot(JacFx.T) + JacFu.dot(Q).dot(JacFu.T)
 	xtrue = AckermannModel(xtrue, u + np.array([[SigmaV], [SigmaPhi]]) * random.normal(0, 1, size = (2,1)), dT, L)

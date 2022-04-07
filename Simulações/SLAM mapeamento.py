@@ -19,7 +19,7 @@ def AngleWrap(ang):
 def tcomp(tab, tbc):
 	result = tab[2] + tbc[2]
 	if result > np.pi or result <= -np.pi:
-		result = angleWrap(result)
+		result = AngleWrap(result)
 	s = np.sin(tab[2])
 	c = np.cos(tab[2])
 	matriz = np.array([c, -s, s, c]).reshape(2, 2)
