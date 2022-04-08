@@ -12,7 +12,8 @@
 #define MLB                  6
 
 ////////////////////////////////////////////////////// PARÂMETROS
-float roda_raio = 22.0/1000;
+float roda_raio = 31.75/1000;
+int rpm = 100;
 float l = 120.0/1000;
 float dPhi = 2*PI / 2091.0;
 float dt = 20.0/1000;
@@ -20,7 +21,7 @@ volatile long pulsosR = 0, pulsosL = 0;
 float x = 0.0, y = 0.0, theta = 0.0;
 
 ////////////////////////////////////////////////////// Testes
-float k1 = 0.850, k2 = 0.20;
+float k1 = 0.05, k2 = 0.20;
 
 ////////////////////////////////////////////////////// Protótipos
 
@@ -34,7 +35,7 @@ void bluetoothControl();
 void printOdom();
 void mover(float Xref, float Yref);
 void controleRef(float Xref, float Yref, float ctrl[2]);
-
+int convertePWM(float Vcontrole);
 
 ////////////////////////////////////////////////////// SETUP
 
@@ -74,7 +75,7 @@ void setup() {
 
 void loop() {
   // put your main code here, to run repeatedly:
-  mover(100, 0);
+  mover(0, 1);
   if(Serial.available() > 0)
   {
     bluetoothControl();
@@ -89,7 +90,6 @@ void PCISetup(byte pin)
   PCIFR |= bit(digitalPinToPCICRbit(pin));
   PCICR |= bit(digitalPinToPCICRbit(pin));
 }
-
 
 void controleManual(int esquerdo, int direito)
 {
@@ -251,28 +251,33 @@ void printOdom()
   Serial.println();
 }
 
-void controleRef(float Xref, float Yref, float ctrl[2])
+void controleRef(float Xref, float Yref, int ctrl[2])
 {
   float dY = (Yref - y);
   float dX = (Xref - x);
   float THETAref = atan2(dY, dX);
   THETAref = angleWrap(THETAref);
 
-  float erroAngular = THETAref - theta;
+  float erroAngular = angleWrap(THETAref - theta);
   float erroLinear = sqrt(pow(dX, 2) + pow(dY, 2)) * cos(erroAngular);
 
   float v = k1 * erroLinear;
   float w = k2 * erroAngular;
-  // Serial.print(erroAngular);
-  // Serial.print(" ");
-  // Serial.println(erroLinear);
-  ctrl [0] = v + w;
-  ctrl [1] = v - w;
+
+  ctrl [0] = convertePWM(v + w);
+  ctrl [1] = convertePWM(v - w);
+}
+
+int convertePWM(float Vcontrole)
+{
+  int pwm = 255 * Vcontrole/ ((rpm/60) * 2 * PI * roda_raio);
+  pwm = int(constrain(pwm, -255, 255));
+  return pwm;
 }
 
 void mover(float Xref, float Yref)
 {
-  if (sqrt(pow(Xref - x, 2) + pow(Yref- y, 2)) < 50)
+  if (sqrt(pow(Xref - x, 2) + pow(Yref- y, 2)) < 0.1)
   {
     Serial.println("Chegou");
     digitalWrite(MLA, 0);
@@ -282,14 +287,12 @@ void mover(float Xref, float Yref)
     return;
   }
 
-  float ctrl[2];
+  int ctrl[2];
   controleRef(Xref, Yref, ctrl);
-  ctrl[0] = int(constrain(ctrl[0], -255, 255));
-  ctrl[1] = int(constrain(ctrl[1], -255, 255));
 
-  // Serial.print(ctrl[0]);
-  // Serial.print(' ');
-  // Serial.println(ctrl[1]);
+  Serial.print(ctrl[0]);
+  Serial.print(' ');
+  Serial.println(ctrl[1]);
 
   if (ctrl[0] > 0)
   {
