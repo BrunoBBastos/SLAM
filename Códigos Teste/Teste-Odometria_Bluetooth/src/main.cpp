@@ -24,7 +24,7 @@ float k1 = 0.05, k2 = 0.20;
 ////////////////////////////////////////////////////// Testes
 
 float referencia[2] = {1, 0};
-char modo = 'r';
+char modo = 'm';
 
 ////////////////////////////////////////////////////// Protótipos
 
@@ -38,7 +38,7 @@ void bluetoothControl();
 void printOdom();
 void mover(float referencia[2]);
 void controleRef(float Xref, float Yref, float ctrl[2]);
-int convertePWM(float Vcontrole);
+int convertePWM(float sinal);
 void modo_de_Operacao(char modo);
 
 ////////////////////////////////////////////////////// SETUP
@@ -62,7 +62,7 @@ void setup() {
 // Colocar dentro do menu 'modo de operação'
   Serial.println("Envie qqr coisa para acionar");
   while(Serial.available() == 0);
-  Serial.print("Acionando motor\nEnvie qqr coisa para parar \n");
+  Serial.print("Acionando motor\nEnvie qqr coisa para parar\n");
   while(Serial.available() != 0) Serial.read();
 
 // PRA FRENTE:
@@ -79,7 +79,8 @@ void setup() {
 
 void loop()
 {
-  modo_de_Operacao(modo);
+  // modo_de_Operacao(modo);
+  mover(referencia);
 
 }
 
@@ -134,17 +135,24 @@ void controleRef(float referencia[2], float ctrl[2])
   
 }
 
-int convertePWM(float Vcontrole)
+int convertePWM(float sinal)
 {
-  int pwm = 255 * Vcontrole/ ((rpm/60) * 2 * PI * roda_raio);
+  float maxVel = (rpm/60) * 2 * PI * roda_raio;
+  int pwm = sinal * 255 / maxVel;
   int sig = abs(pwm)/ pwm;
   pwm = constrain(abs(pwm), 50, 255) * sig;
   return pwm;
 }
 
+float medirDistancia(float p1[2], float p2[2])
+{
+  return sqrt(pow(p1[0] - p2[0], 2) + pow(p1[1] - p2[1], 2));
+}
+
 void mover(float referencia[2])
 {
-  float distancia = sqrt(pow(referencia[0] - x, 2) + pow(referencia[1]- y, 2));
+  float pos[2] = {x, y};
+  float distancia = medirDistancia(referencia, pos);
   if (distancia < 0.1)
   {
     Serial.print("Chegou: ");
@@ -324,7 +332,23 @@ void modo_de_Operacao(char modo)
 
   if(Serial.available() > 0)
   {
-    
+    if (Serial.peek() == 'x')
+    {
+      while(Serial.available() > 0)
+      {
+        Serial.read();
+      }
+      Serial.println("Escolha o modo de operação:");
+      Serial.println("'m' - Controle manual");
+      Serial.println("'r' - Controle por referência");
+
+      while (Serial.available() == 0);
+      modo = Serial.read();
+      while(Serial.available() != 0) Serial.read();
+      Serial.print("Modo selecionado: ");
+      Serial.print(modo);
+
+    }
   }
 
   switch (modo)
@@ -337,9 +361,16 @@ void modo_de_Operacao(char modo)
       bluetoothControl();
       break;
 
-    
+    case 's':
+      //PARAR
+      digitalWrite(MLA, 0);
+      digitalWrite(MLB, 0);
+      digitalWrite(MRA, 0);
+      digitalWrite(MRB, 0);
+      break;
 
     default:
+    modo = 's';
       break;
 
   }
