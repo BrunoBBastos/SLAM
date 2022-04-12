@@ -14,14 +14,17 @@
 ////////////////////////////////////////////////////// PARÂMETROS
 float roda_raio = 31.75/1000;
 int rpm = 100;
-float l = 120.0/1000;
+float l = 116.0/1000;
 float dPhi = 2*PI / 2091.0;
 float dt = 20.0/1000;
 volatile long pulsosR = 0, pulsosL = 0;
-float x = 0.0, y = 0.0, theta = 0.0;
+volatile float x = 0.0, y = 0.0, theta = 0.0;
+float k1 = 0.05, k2 = 0.20;
 
 ////////////////////////////////////////////////////// Testes
-float k1 = 0.05, k2 = 0.20;
+
+float referencia[2] = {1, 0};
+char modo = 'r';
 
 ////////////////////////////////////////////////////// Protótipos
 
@@ -33,9 +36,10 @@ void odometria();
 float angleWrap(float ang);
 void bluetoothControl();
 void printOdom();
-void mover(float Xref, float Yref);
+void mover(float referencia[2]);
 void controleRef(float Xref, float Yref, float ctrl[2]);
 int convertePWM(float Vcontrole);
+void modo_de_Operacao(char modo);
 
 ////////////////////////////////////////////////////// SETUP
 
@@ -62,10 +66,10 @@ void setup() {
   while(Serial.available() != 0) Serial.read();
 
 // PRA FRENTE:
-//  digitalWrite(MLA, 1);
-//  digitalWrite(MLB, 0);
-//  digitalWrite(MRA, 0);
-//  digitalWrite(MRB, 1);
+ digitalWrite(MLA, 1);
+ digitalWrite(MLB, 0);
+ digitalWrite(MRA, 0);
+ digitalWrite(MRB, 1);
 
   MsTimer2::set(dt*1000, odometria);
   MsTimer2::start();
@@ -73,87 +77,21 @@ void setup() {
 
 ////////////////////////////////////////////////////// LOOP
 
-void loop() {
-  // put your main code here, to run repeatedly:
-  mover(0, 1);
-  if(Serial.available() > 0)
-  {
-    bluetoothControl();
-  }
+void loop()
+{
+  modo_de_Operacao(modo);
+
 }
 
 ////////////////////////////////////////////////////// FUNÇÕES
 
-void PCISetup(byte pin)
-{
-  *digitalPinToPCMSK(pin) |= bit (digitalPinToPCMSKbit(pin));
-  PCIFR |= bit(digitalPinToPCICRbit(pin));
-  PCICR |= bit(digitalPinToPCICRbit(pin));
-}
-
-void controleManual(int esquerdo, int direito)
-{
- if (esquerdo == 1) {
-    digitalWrite(MLA, 1);
-    digitalWrite(MLB, 0);
-  }
-  else if (esquerdo == 0) {
-    digitalWrite(MLA, 0);
-    digitalWrite(MLB, 0);
-  }
-  else if (esquerdo == -1) {
-    digitalWrite(MLA, 0);
-    digitalWrite(MLB, 1);
-  }
-  if (direito == 1) {
-    digitalWrite(MRA, 0);
-    digitalWrite(MRB, 1);
-  }
-  else if (direito == 0) {
-    digitalWrite(MRA, 0);
-    digitalWrite(MRB, 0);
-  }
-  else if (direito == -1) {
-    digitalWrite(MRA, 1);
-    digitalWrite(MRB, 0);
-  }
-}
-
-ISR (PCINT0_vect) // Interrupt Service Routine dos pinos 8 a 13
-{
-  bool A = digitalRead(ENC_LA);
-  bool B = digitalRead(ENC_LB);
-
-  if(A == B)
-  {
-    pulsosL--;
-  }
-  else
-  {
-    pulsosL++;
-  }
-}
-
-ISR (PCINT2_vect) // Interrupt Service Routine dos pinos 0 a 7
-{
-  bool A = digitalRead(ENC_RA);
-  bool B = digitalRead(ENC_RB);
-
-  if(A == B)
-  {
-    pulsosR++;
-  }
-  else
-  {
-    pulsosR--;
-  }
-}
 
 void odometria()
 {
   // Velocidade linear da roda: v = w*r
   float Vr = pulsosR * (dPhi / dt) * roda_raio;
   float Vl = pulsosL * (dPhi / dt) * roda_raio;
+
   pulsosL = 0;
   pulsosR = 0;
   
@@ -178,22 +116,72 @@ void odometria()
   theta = angleWrap(theta);
 }
 
-float angleWrap(float ang)
+void controleRef(float referencia[2], float ctrl[2])
 {
-  if (ang > PI)
+  float dY = (referencia[1] - y);
+  float dX = (referencia[0] - x);
+  float THETAref = atan2(dY, dX);
+  THETAref = angleWrap(THETAref);
+
+  float erroAngular = angleWrap(THETAref - theta);
+  float erroLinear = sqrt(pow(dX, 2) + pow(dY, 2)) * cos(erroAngular);
+
+  float v = k1 * erroLinear;
+  float w = k2 * erroAngular;
+
+  ctrl [0] = convertePWM(v - w);
+  ctrl [1] = convertePWM(v + w);
+  
+}
+
+int convertePWM(float Vcontrole)
+{
+  int pwm = 255 * Vcontrole/ ((rpm/60) * 2 * PI * roda_raio);
+  int sig = abs(pwm)/ pwm;
+  pwm = constrain(abs(pwm), 50, 255) * sig;
+  return pwm;
+}
+
+void mover(float referencia[2])
+{
+  float distancia = sqrt(pow(referencia[0] - x, 2) + pow(referencia[1]- y, 2));
+  if (distancia < 0.1)
   {
-    return ang - 2 * PI;
+    Serial.print("Chegou: ");
+    Serial.println(distancia);
+    printOdom();
+    digitalWrite(MLA, 0);
+    digitalWrite(MLB, 0);
+    digitalWrite(MRA, 0);
+    digitalWrite(MRB, 0);
+    return;
   }
-  else if (ang < -PI)
+
+  float ctrl[2];
+  controleRef(referencia, ctrl);
+
+  if (ctrl[0] > 0)
   {
-    return ang + 2 * PI;
+    analogWrite(MLA, abs(ctrl[0]));
+    digitalWrite(MLB, 0);
   }
   else
   {
-    return ang;
+    digitalWrite(MLA, 0);
+    analogWrite(MLB,  abs(ctrl[0]));
+  }
+
+  if (ctrl[1] > 0)
+  {
+    digitalWrite(MRA, 0);
+    analogWrite(MRB, abs(ctrl[1]));
+  }
+  else
+  {
+    analogWrite(MRA, abs(ctrl[1]));
+    digitalWrite(MRB,  0);
   }
 }
-
 
 void bluetoothControl()
 {
@@ -237,9 +225,36 @@ void bluetoothControl()
       controleManual(0, 0);
       break;
 
-    case 'x':
-      printOdom();
+    default:
       break;
+  }
+}
+
+void controleManual(int esquerdo, int direito)
+{
+ if (esquerdo == 1) {
+    digitalWrite(MLA, 1);
+    digitalWrite(MLB, 0);
+  }
+  else if (esquerdo == 0) {
+    digitalWrite(MLA, 0);
+    digitalWrite(MLB, 0);
+  }
+  else if (esquerdo == -1) {
+    digitalWrite(MLA, 0);
+    digitalWrite(MLB, 1);
+  }
+  if (direito == 1) {
+    digitalWrite(MRA, 0);
+    digitalWrite(MRB, 1);
+  }
+  else if (direito == 0) {
+    digitalWrite(MRA, 0);
+    digitalWrite(MRB, 0);
+  }
+  else if (direito == -1) {
+    digitalWrite(MRA, 1);
+    digitalWrite(MRB, 0);
   }
 }
 
@@ -251,69 +266,81 @@ void printOdom()
   Serial.println();
 }
 
-void controleRef(float Xref, float Yref, int ctrl[2])
+float angleWrap(float ang)
 {
-  float dY = (Yref - y);
-  float dX = (Xref - x);
-  float THETAref = atan2(dY, dX);
-  THETAref = angleWrap(THETAref);
-
-  float erroAngular = angleWrap(THETAref - theta);
-  float erroLinear = sqrt(pow(dX, 2) + pow(dY, 2)) * cos(erroAngular);
-
-  float v = k1 * erroLinear;
-  float w = k2 * erroAngular;
-
-  ctrl [0] = convertePWM(v + w);
-  ctrl [1] = convertePWM(v - w);
-}
-
-int convertePWM(float Vcontrole)
-{
-  int pwm = 255 * Vcontrole/ ((rpm/60) * 2 * PI * roda_raio);
-  pwm = int(constrain(pwm, -255, 255));
-  return pwm;
-}
-
-void mover(float Xref, float Yref)
-{
-  if (sqrt(pow(Xref - x, 2) + pow(Yref- y, 2)) < 0.1)
+  if (ang > PI)
   {
-    Serial.println("Chegou");
-    digitalWrite(MLA, 0);
-    digitalWrite(MLB, 0);
-    digitalWrite(MRA, 0);
-    digitalWrite(MRB, 0);
-    return;
+    return ang - 2 * PI;
   }
-
-  int ctrl[2];
-  controleRef(Xref, Yref, ctrl);
-
-  Serial.print(ctrl[0]);
-  Serial.print(' ');
-  Serial.println(ctrl[1]);
-
-  if (ctrl[0] > 0)
+  else if (ang < -PI)
   {
-    analogWrite(MLA, abs(ctrl[0]));
-    digitalWrite(MLB, 0);
+    return ang + 2 * PI;
   }
   else
   {
-    digitalWrite(MLA, 0);
-    analogWrite(MLB,  abs(ctrl[0]));
+    return ang;
   }
+}
 
-  if (ctrl[1] > 0)
+void PCISetup(byte pin)
+{
+  *digitalPinToPCMSK(pin) |= bit (digitalPinToPCMSKbit(pin));
+  PCIFR |= bit(digitalPinToPCICRbit(pin));
+  PCICR |= bit(digitalPinToPCICRbit(pin));
+}
+
+ISR (PCINT0_vect) // Interrupt Service Routine dos pinos 8 a 13
+{
+  bool A = digitalRead(ENC_LA);
+  bool B = digitalRead(ENC_LB);
+
+  if(A == B)
   {
-    digitalWrite(MRA, 0);
-    analogWrite(MRB, abs(ctrl[1]));
+    pulsosL--;
   }
   else
   {
-    analogWrite(MRA, abs(ctrl[1]));
-    digitalWrite(MRB,  0);
+    pulsosL++;
+  }
+}
+
+ISR (PCINT2_vect) // Interrupt Service Routine dos pinos 0 a 7
+{
+  bool A = digitalRead(ENC_RA);
+  bool B = digitalRead(ENC_RB);
+
+  if(A == B)
+  {
+    pulsosR++;
+  }
+  else
+  {
+    pulsosR--;
+  }
+}
+
+void modo_de_Operacao(char modo)
+{
+
+  if(Serial.available() > 0)
+  {
+    
   }
 
+  switch (modo)
+  {
+    case 'r':
+      mover(referencia);
+      break;
+
+    case 'm':
+      bluetoothControl();
+      break;
+
+    
+
+    default:
+      break;
+
+  }
 }

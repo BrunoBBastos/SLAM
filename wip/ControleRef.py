@@ -33,6 +33,7 @@ def GetRobotControl(X, Ref):
     v = k1 * erroLinear
     w = k2 * erroAngular
     u = np.array([v, w]).reshape(2, 1)
+    print(u)
     return u
 
 def GetOdometry(X, Vl, Vr):
@@ -42,8 +43,7 @@ def GetOdometry(X, Vl, Vr):
         return
     w = (Vr - Vl)/2
     R = (Vr + Vl) / (Vr - Vl) * l/2
-    CCI = np.array([[X[0, 0] - R * np.sin(X[2, 0])[0]], [X[1, 0] + R * np.cos(X[2, 0])[0]]], dtype = 'float')
-    print(CCI)
+    CCI = np.array([[X[0, 0] - R * np.sin(X[2, 0])], [X[1, 0] + R * np.cos(X[2, 0])]], dtype = 'float')
     rot = np.array([[np.cos(w*dT), -np.sin(w*dT), 0],
                      [np.sin(w*dT), np.cos(w*dT), 0],
                      [0, 0, 1]], dtype = 'float')
@@ -60,7 +60,7 @@ def DrawRobot(Xr):
     plt.clf() # Descomentar para animar
     plt.grid(b = True)
     plt.axis([-2, 2, -2, 2])
-    plt.title('Teste co controle por referência')
+    plt.title('Teste do controle por referência')
     plt.xlabel('x')
     plt.ylabel('y')
 
@@ -94,8 +94,8 @@ for k in range(nSteps):
 	
 
 	# u = np.array([0.3, 0.05]).reshape(2, 1)
-    u = GetRobotControl(X, [-2, 0])
-    X = GetOdometry(X, u[0], u[1])
+    u = GetRobotControl(X, [1, 0])
+    X = GetOdometry(X, u[0, 0], u[1, 0])
     # X = ModeloDiferencial(X, u, dT)
 
 # draw occasionally
