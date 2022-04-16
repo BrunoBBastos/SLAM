@@ -33,7 +33,6 @@ def GetRobotControl(X, Ref):
     v = k1 * erroLinear
     w = k2 * erroAngular
     u = np.array([v, w]).reshape(2, 1)
-    print(u)
     return u
 
 def GetOdometry(X, Vl, Vr):
@@ -57,7 +56,7 @@ def GetOdometry(X, Vl, Vr):
 def DrawRobot(Xr):
 #−−−−−−−− Set up graphics −−−−−−−−−−−#
 
-    plt.clf() # Descomentar para animar
+    plt.clf()
     plt.grid(b = True)
     plt.axis([-2, 2, -2, 2])
     plt.title('Teste do controle por referência')
@@ -91,12 +90,10 @@ X = np.array([[0], [0], [0]], dtype = 'float')
 
 #−−−−−−−− Main loop −−−−−−−−−−−#
 for k in range(nSteps):
-	
 
-	# u = np.array([0.3, 0.05]).reshape(2, 1)
-    u = GetRobotControl(X, [1, 0])
-    X = GetOdometry(X, u[0, 0], u[1, 0])
-    # X = ModeloDiferencial(X, u, dT)
+    u = GetRobotControl(X, [-1, 0])
+    # X = GetOdometry(X, u[0, 0], u[1, 0])
+    X = ModeloDiferencial(X, u, dT)
 
 # draw occasionally
 
