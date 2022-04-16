@@ -144,6 +144,62 @@ class RoboUniciclo
     }
   }
 
+  void controleManual()
+  {
+    char buff = Serial.read();
+
+    switch (buff) {
+
+      case 'F':
+        int ctrl[2] = {255, 255};
+        this -> mover(ctrl);
+        break;
+
+      case 'B':
+        int ctrl[2] = {-255, -255};
+        this -> mover(ctrl);
+        break;
+
+      case 'L':
+        int ctrl[2] = {-255, 255};
+        this -> mover(ctrl);
+        break;
+
+      case 'R':
+        int ctrl[2] = {255, -255};
+        this -> mover(ctrl);
+        break;
+
+      case 'G':
+        int ctrl[2] = {0, 255};
+        this -> mover(ctrl);
+        break;
+
+      case 'I':
+        int ctrl[2] = {255, 0};
+        this -> mover(ctrl);
+        break;
+
+      case 'H':
+        int ctrl[2] = {0, -255};
+        this -> mover(ctrl);
+        break;
+
+      case 'J':
+        int ctrl[2] = {-255, 0};
+        this -> mover(ctrl);
+        break;
+
+      case 'S':
+        int ctrl[2] = {0, 0};
+        this -> mover(ctrl);
+        break;
+
+      default:
+        break;
+    }
+  }
+
 };
 
 RoboUniciclo rob;
@@ -201,52 +257,7 @@ void odometria()
 }
 
 
-void bluetoothControl()
-{
-  char buff = Serial.read();
 
-  switch (buff) {
-
-    case 'F':
-      controleManual(1, 1);
-      break;
-
-    case 'B':
-      controleManual(-1, -1);
-      break;
-
-    case 'L':
-      controleManual(-1, 1);
-      break;
-
-    case 'R':
-      controleManual(1, -1);
-      break;
-
-    case 'G':
-      controleManual(0, 1);
-      break;
-
-    case 'I':
-      controleManual(1, 0);
-      break;
-
-    case 'H':
-      controleManual(0, -1);
-      break;
-
-    case 'J':
-      controleManual(-1, 0);
-      break;
-
-    case 'S':
-      controleManual(0, 0);
-      break;
-
-    default:
-      break;
-  }
-}
 
 void controleManual(int esquerdo, int direito)
 {
@@ -294,10 +305,7 @@ float angleWrap(float ang)
   {
     return ang + 2 * PI;
   }
-  else
-  {
-    return ang;
-  }
+  return ang;
 }
 
 void PCISetup(byte pin)
