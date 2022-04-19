@@ -15,6 +15,8 @@
 #define MLA                  5
 #define MLB                  6
 
+long int pulsosEncL = 0, pulsosEncR = 0;
+
 ////////////////////////////////////////////////////// CLASSES
 
 
@@ -50,15 +52,32 @@ class Encoder
 {
 
   int A, B;
-  long int pulsos = 0;
+  long int *pulsos = 0;
+  float deltaPhi;
 
   public:
-  void begin(int pinA, int pinB)
+  void begin(int pinA, int pinB, float dPhi, long int &varPulsos)
   {
     A = pinA;
     B = pinB;
+    deltaPhi = dPhi;
+    pulsos = &varPulsos;
     pinMode(A, INPUT_PULLUP);
     pinMode(B, INPUT_PULLUP);
+  }
+
+  // Observa a contagem de pulsos sem resetar o valor
+  long int contar()
+  {
+    return *pulsos;
+  }
+
+  // Observa a contagem de pulsos e reseta o valor
+  long int coletar()
+  {
+    long int total = *pulsos;
+    *pulsos = 0;
+    return total;
   }
 
 };
@@ -71,9 +90,10 @@ class RoboUniciclo
   float dPhi = 2*PI / 2091.0;
   float dt = 20.0/1000;
 
-  char _modo = 't';
+  char modoOp = 't';
 
-  Motor Esq, Dir;
+  Motor MEsq, MDir;
+  Encoder EEsq, EDir;
 
   public:
 
@@ -81,14 +101,17 @@ class RoboUniciclo
   void preparar()
   {
     Serial.begin(115200);
-    Esq.begin(MLA, MLB); 
-    Dir.begin(MRB, MRA); 
 
+    MEsq.begin(MLA, MLB); 
+    MDir.begin(MRB, MRA); 
+    EEsq.begin(ENC_LA, ENC_LB, dPhi, pulsosEncL);
+    EDir.begin(ENC_RA, ENC_RB, dPhi, pulsosEncR);
   }
+
   // Agir de acordo com o modo de execução selecionado
   void executar()
   {
-    switch(_modo)
+    switch(modoOp)
     {
       case 'm':
         break;
@@ -104,13 +127,16 @@ class RoboUniciclo
 
   void acionarMotores(int pwmE, int pwmD)
   {
-    Esq.acionar(pwmE);
-    Dir.acionar(pwmD);
+    MEsq.acionar(pwmE);
+    MDir.acionar(pwmD);
   }
 
   void testarMotores()
   {
     acionarMotores(255, 255);
+    Serial.print(EEsq.contar());
+    Serial.print(' ');
+    Serial.println(EDir.contar());
   }
 };
 
@@ -119,6 +145,7 @@ class RoboUniciclo
 ////////////////////////////////////////////////////// GLOBAIS
 
 RoboUniciclo robo;
+
 
 ////////////////////////////////////////////////////// SETUP
 
@@ -135,41 +162,40 @@ void loop()
   robo.executar();
 }
 
-// void PCISetup(byte pin)
-// {
-//   *digitalPinToPCMSK(pin) |= bit (digitalPinToPCMSKbit(pin));
-//   PCIFR |= bit(digitalPinToPCICRbit(pin));
-//   PCICR |= bit(digitalPinToPCICRbit(pin));
-// }
+void PCISetup(byte pin)
+{
+  *digitalPinToPCMSK(pin) |= bit (digitalPinToPCMSKbit(pin));
+  PCIFR |= bit(digitalPinToPCICRbit(pin));
+  PCICR |= bit(digitalPinToPCICRbit(pin));
+}
 
-// ISR (PCINT0_vect) // Interrupt Service Routine dos pinos 8 a 13
-// {
-//   bool A = digitalRead(ENC_LA);
-//   bool B = digitalRead(ENC_LB);
+ISR (PCINT0_vect) // Interrupt Service Routine dos pinos 8 a 13
+{
+  bool A = digitalRead(ENC_LA);
+  bool B = digitalRead(ENC_LB);
 
 
-//   if(A == B)
-//   {
-//     robo.incrementarPulsos(-1, 0);
-//     // pulsosL--;
-//   }
-//   else
-//   {
-//     pulsosL++;
-//   }
-// }
+  if(A == B)
+  {
+    pulsosEncL--;
+  }
+  else
+  {
+    pulsosEncL++;
+  }
+}
 
-// ISR (PCINT2_vect) // Interrupt Service Routine dos pinos 0 a 7
-// {
-//   bool A = digitalRead(ENC_RA);
-//   bool B = digitalRead(ENC_RB);
+ISR (PCINT2_vect) // Interrupt Service Routine dos pinos 0 a 7
+{
+  bool A = digitalRead(ENC_RA);
+  bool B = digitalRead(ENC_RB);
 
-//   if(A == B)
-//   {
-//     pulsosR++;
-//   }
-//   else
-//   {
-//     pulsosR--;
-//   }
-// }
+  if(A == B)
+  {
+    pulsosEncR++;
+  }
+  else
+  {
+    pulsosEncR--;
+  }
+}
