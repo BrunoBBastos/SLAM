@@ -56,14 +56,15 @@ class Encoder
 
   int A, B;
   volatile long int *pulsos;
-  float deltaPhi;
+  float dPhi;
+  float dt = 20.0f/1000;
 
   public:
-  void begin(int pinA, int pinB, float dPhi, volatile long int &varPulsos)
+  void begin(int pinA, int pinB, float deltaPhi, volatile long int &varPulsos)
   {
     A = pinA;
     B = pinB;
-    deltaPhi = dPhi;
+    dPhi = deltaPhi;
     pulsos = &varPulsos;
     pinMode(A, INPUT_PULLUP);
     pinMode(B, INPUT_PULLUP);
@@ -83,31 +84,36 @@ class Encoder
     return total;
   }
 
-};
-
-class Odometria
-{
-  float incremento[3] = {0,0,0};
-  float r, dPhi, dt;
-  Encoder EEsq, EDir;
-
-  void begin(Encoder E, Encoder D, float deltaPhi, float raioRodas, int tempoMs)
+  float velocidadeAngRoda()
   {
-    EEsq = E;
-    EDir = D;
-    dPhi = deltaPhi;
-    dt = tempoMs;
-
-    MsTimer2::set(dt*1000, deslocamento);
-    MsTimer2::start();
+    return coletarPulsos() * dPhi/dt;
   }
 
-  static void deslocamento()
-  {
-    float VelR = EDir.coletarPulsos() * dPhi/dt * r; 
-    float VelE = EEsq.coletarPulsos() * dPhi/dt * r; 
-  }
 };
+
+// class Odometria
+// {
+//   float incremento[3] = {0,0,0};
+//   float r, dPhi, dt;
+//   Encoder EEsq, EDir;
+
+//   void begin(Encoder E, Encoder D, float deltaPhi, float raioRodas, int tempoMs)
+//   {
+//     EEsq = E;
+//     EDir = D;
+//     dPhi = deltaPhi;
+//     dt = tempoMs;
+
+//     MsTimer2::set(dt*1000, deslocamento);
+//     MsTimer2::start();
+//   }
+
+//   static void deslocamento()
+//   {
+//   //   float VelR = EDir.coletarPulsos() * dPhi/dt * r; 
+//   //   float VelE = EEsq.coletarPulsos() * dPhi/dt * r; 
+//   }
+// };
 
 class RoboUniciclo
 {
@@ -123,6 +129,7 @@ class RoboUniciclo
   Encoder EEsq, EDir;
 
   public:
+  static bool flagEnc;
 
   // Instanciar classes, inicializar pinos, etc
   void preparar()
@@ -130,11 +137,22 @@ class RoboUniciclo
     Serial.begin(115200);
 
     MEsq.begin(MLA, MLB); 
-    MDir.begin(MRB, MRA); 
+    MDir.begin(MRB, MRA);
+
     EEsq.begin(ENC_LA, ENC_LB, dPhi, pulsosEncL);
     EDir.begin(ENC_RA, ENC_RB, dPhi, pulsosEncR);
-    Odometria.begin(EEsq, EDir, dPhi, dt, 20)
+    RoboUniciclo::flagEnc = false;
+
+    MsTimer2::set(dt*1000, RoboUniciclo::flagEncoders);
+    MsTimer2::start();
   }
+
+  static void flagEncoders()
+  {
+    
+  }
+
+
 
   // Agir de acordo com o modo de execução selecionado
   void executar()
