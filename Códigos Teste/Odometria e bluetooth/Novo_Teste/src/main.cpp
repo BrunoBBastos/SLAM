@@ -115,8 +115,10 @@ class Encoder
 //   }
 // };
 
+
 class RoboUniciclo
 {
+  public:
   float roda_raio = 31.75/1000;
   int rpm = 100;
   float l = 120.0/1000;
@@ -128,7 +130,6 @@ class RoboUniciclo
   Motor MEsq, MDir;
   Encoder EEsq, EDir;
 
-  public:
   static bool flagEnc;
 
   // Instanciar classes, inicializar pinos, etc
@@ -141,15 +142,16 @@ class RoboUniciclo
 
     EEsq.begin(ENC_LA, ENC_LB, dPhi, pulsosEncL);
     EDir.begin(ENC_RA, ENC_RB, dPhi, pulsosEncR);
-    RoboUniciclo::flagEnc = false;
+    flagEnc = false;
 
-    MsTimer2::set(dt*1000, RoboUniciclo::flagEncoders);
+    // Colocar dentro de uma função "iniciar teste" etc
+    MsTimer2::set(dt*1000, RoboUniciclo::flagEncoders); 
     MsTimer2::start();
   }
 
   static void flagEncoders()
   {
-    
+    flagEnc = true;
   }
 
 
@@ -180,12 +182,17 @@ class RoboUniciclo
   void testarMotores()
   {
     acionarMotores(150, 150);
-    Serial.print(EEsq.contar());
-    Serial.print(' ');
-    Serial.println(EDir.contar());
+    if(flagEnc)
+    {
+      Serial.print(EEsq.velocidadeAngRoda() * roda_raio);
+      Serial.print(' ');
+      Serial.println(EDir.velocidadeAngRoda() * roda_raio);
+      flagEnc = false;
+    }
   }
 };
 
+bool RoboUniciclo::flagEnc;
 
 
 ////////////////////////////////////////////////////// GLOBAIS
