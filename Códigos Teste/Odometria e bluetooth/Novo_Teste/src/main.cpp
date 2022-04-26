@@ -20,6 +20,8 @@ volatile long int pulsosEncL = 0, pulsosEncR = 0;
 void PCISetup(byte pin);
 ISR (PCINT0_vect); // Interrupt Service Routine dos pinos 8 a 13
 ISR (PCINT2_vect); // Interrupt Service Routine dos pinos 0 a 7
+float angleWrap(float ang);
+
 ////////////////////////////////////////////////////// CLASSES
 
 
@@ -91,31 +93,6 @@ class Encoder
 
 };
 
-// class Odometria
-// {
-//   float incremento[3] = {0,0,0};
-//   float r, dPhi, dt;
-//   Encoder EEsq, EDir;
-
-//   void begin(Encoder E, Encoder D, float deltaPhi, float raioRodas, int tempoMs)
-//   {
-//     EEsq = E;
-//     EDir = D;
-//     dPhi = deltaPhi;
-//     dt = tempoMs;
-
-//     MsTimer2::set(dt*1000, deslocamento);
-//     MsTimer2::start();
-//   }
-
-//   static void deslocamento()
-//   {
-//   //   float VelR = EDir.coletarPulsos() * dPhi/dt * r; 
-//   //   float VelE = EEsq.coletarPulsos() * dPhi/dt * r; 
-//   }
-// };
-
-
 class RoboUniciclo
 {
   public:
@@ -124,8 +101,8 @@ class RoboUniciclo
   float l = 120.0/1000;
   float dPhi = 2*PI / 2091.0;
   float dt = 20.0/1000;
-
-  char modoOp = 't';
+  float pose[3] = {0.0f, 0.0f, 0.0f};
+  char modoOp = 'm';
 
   Motor MEsq, MDir;
   Encoder EEsq, EDir;
@@ -154,20 +131,61 @@ class RoboUniciclo
     flagEnc = true;
   }
 
+  void ouvirSerial()
+  {
+    if (Serial.available() > 0)
+    {
+      char cmd = Serial.read();
+      while (Serial.available() > 0) Serial.read();
 
+      switch(cmd)
+      {
+        case 'i':
+
+          break;
+        
+        case 'x':
+          acionarMotores(0, 0);
+          Serial.println("Selecione o modo de operação:");
+          Serial.println("t - Testar Motores");
+          Serial.println("o - Testar Odometria");
+          Serial.println("m - Controle Manual");
+          Serial.flush();
+          while(Serial.available() > 0) Serial.read();
+          while(Serial.available() == 0)
+          {
+            Serial.print('. ');
+            delay(100);
+          }
+          modoOp = Serial.read();
+          Serial.println(modoOp);
+          break;
+        
+        default:
+          break;
+      }
+    }
+  }
 
   // Agir de acordo com o modo de execução selecionado
   void executar()
   {
+    ouvirSerial();
+
     switch(modoOp)
     {
       case 'm':
+
         break;
 
       case 't':
         testarMotores();
         break;
       
+      case 'o':
+        testarOdometria();
+        break;
+
       default:
         break;
     }
@@ -177,6 +195,43 @@ class RoboUniciclo
   {
     MEsq.acionar(pwmE);
     MDir.acionar(pwmD);
+  }
+
+  void testarOdometria()
+  {
+    acionarMotores(150, 150);
+    if(flagEnc)
+    {
+      float vE = EEsq.velocidadeAngRoda() * roda_raio;
+      float vD = EDir.velocidadeAngRoda() * roda_raio;
+      flagEnc = false;
+      
+      if (vE == vD)
+      {
+        pose[0] += vD * cos(pose[2]) * dt; 
+        pose[1] += vD * sin(pose[2]) * dt;
+      }
+
+      else
+      {
+        float w = (vD - vE) / l;
+        float R = (l/2) * (vD + vE) / (vD - vE);
+
+        float CCIx = pose[0] - R * sin(pose[2]);
+        float CCIy = pose[1] + R * cos(pose[2]);
+
+        pose[0] = cos(dt * w) * (pose[0] - CCIx) - sin(dt*w) * (pose[1] - CCIy) + CCIx;
+        pose[1] = sin(dt * w) * (pose[0] - CCIx) + cos(dt*w) * (pose[1] - CCIy) + CCIy;
+        pose[2] = pose[2] + dt*w;
+        pose[2] = angleWrap(pose[2]);
+
+        Serial.print(pose[0]);
+        Serial.print(' ');
+        Serial.print(pose[1]);
+        Serial.print(' ');
+        Serial.println(pose[2]);
+      }
+    }
   }
 
   void testarMotores()
@@ -253,4 +308,17 @@ ISR (PCINT2_vect) // Interrupt Service Routine dos pinos 0 a 7
   {
     pulsosEncR--;
   }
+}
+
+float angleWrap(float ang)
+{
+  if (ang > PI)
+  {
+    return ang - 2 * PI;
+  }
+  else if (ang < -PI)
+  {
+    return ang + 2 * PI;
+  }
+  return ang;
 }
