@@ -131,7 +131,7 @@ class RoboUniciclo
     flagEnc = true;
   }
 
-  void ouvirSerial()
+  char ouvirSerial()
   {
     if (Serial.available() > 0)
     {
@@ -141,7 +141,7 @@ class RoboUniciclo
       switch(cmd)
       {
         case 'i':
-
+          return 0;
           break;
         
         case 'x':
@@ -152,16 +152,14 @@ class RoboUniciclo
           Serial.println("m - Controle Manual");
           Serial.flush();
           while(Serial.available() > 0) Serial.read();
-          while(Serial.available() == 0)
-          {
-            Serial.print('. ');
-            delay(100);
-          }
+          while(Serial.available() == 0);
           modoOp = Serial.read();
-          Serial.println(modoOp);
+          Serial.println("Mensagem de confirmação"); // wip
+          return 1;
           break;
         
         default:
+          return cmd;
           break;
       }
     }
@@ -170,12 +168,12 @@ class RoboUniciclo
   // Agir de acordo com o modo de execução selecionado
   void executar()
   {
-    ouvirSerial();
+    char cmd = ouvirSerial();
 
     switch(modoOp)
     {
       case 'm':
-
+        controleManual(cmd);
         break;
 
       case 't':
@@ -191,10 +189,61 @@ class RoboUniciclo
     }
   }
 
+  void controleManual(char cmd)
+  {
+    switch (cmd) {
+
+      case 'F':
+        acionarMotores(255, 255);
+        break;
+
+      case 'B':
+        acionarMotores(-255, -255);
+        break;
+
+      case 'L':
+        acionarMotores(-255, 255);
+        break;
+
+      case 'R':
+        acionarMotores(255, -255);
+        break;
+
+      case 'G':
+        acionarMotores(0, 255);
+        break;
+
+      case 'I':
+        acionarMotores(255, 0);
+        break;
+
+      case 'H':
+        acionarMotores(0, -255);
+        break;
+
+      case 'J':
+        acionarMotores(-255, 0);
+        break;
+
+      case 'S':
+        acionarMotores(0, 0);
+        break;
+
+      default:
+        break;
+    }
+    
+  }
+
   void acionarMotores(int pwmE, int pwmD)
   {
     MEsq.acionar(pwmE);
     MDir.acionar(pwmD);
+  }
+
+  void controleManual()
+  {
+
   }
 
   void testarOdometria()
