@@ -24,6 +24,43 @@ float angleWrap(float ang);
 
 ////////////////////////////////////////////////////// CLASSES
 
+class Controle
+{
+  public:
+  float kpLinear;
+  float kpAngular;
+
+  Controle(float kpL, float kpA)
+  {
+    kpLinear = kpL;
+    kpAngular = kpA;
+  }
+
+  void mudarConstantes(float kpL, float kpA)
+  {
+    kpLinear = kpL;
+    kpAngular = kpA;
+  }
+
+  void gerarSinalControle(float pose[3], float referencia[2], int ctrl[2])
+  {
+    float dY = (referencia[1] - pose[1]);
+    float dX = (referencia[0] - pose[0]);
+    float THETAref = atan2(dY, dX);
+    THETAref = angleWrap(THETAref);
+
+    float erroAngular = angleWrap(THETAref - pose[2]);
+    float erroLinear = sqrt(pow(dX, 2) + pow(dY, 2)) * cos(erroAngular);
+
+    float v = kpLinear * erroLinear;
+    float w = kpAngular * erroAngular;
+
+    ctrl [0] = v - w;
+    ctrl [1] = v + w;
+  }
+
+  
+};
 
 class Motor
 {
@@ -181,12 +218,21 @@ class RoboUniciclo
         break;
       
       case 'o':
-        testarOdometria();
+        odometria();
         break;
 
       default:
         break;
     }
+  }
+
+  int convertePWM(float sinal)
+  {
+    float maxVel = (rpm/60) * 2 * PI * roda_raio;
+    int pwm = sinal * 255 / maxVel;
+    int sig = abs(pwm)/ pwm;
+    pwm = constrain(abs(pwm), 50, 255) * sig;
+    return pwm;
   }
 
   void controleManual(char cmd)
@@ -241,14 +287,8 @@ class RoboUniciclo
     MDir.acionar(pwmD);
   }
 
-  void controleManual()
+  void odometria()
   {
-
-  }
-
-  void testarOdometria()
-  {
-    acionarMotores(150, 150);
     if(flagEnc)
     {
       float vE = EEsq.velocidadeAngRoda() * roda_raio;
@@ -269,16 +309,12 @@ class RoboUniciclo
         float CCIx = pose[0] - R * sin(pose[2]);
         float CCIy = pose[1] + R * cos(pose[2]);
 
+
+        // Coletar apenas o incremento - wip
         pose[0] = cos(dt * w) * (pose[0] - CCIx) - sin(dt*w) * (pose[1] - CCIy) + CCIx;
         pose[1] = sin(dt * w) * (pose[0] - CCIx) + cos(dt*w) * (pose[1] - CCIy) + CCIy;
         pose[2] = pose[2] + dt*w;
         pose[2] = angleWrap(pose[2]);
-
-        Serial.print(pose[0]);
-        Serial.print(' ');
-        Serial.print(pose[1]);
-        Serial.print(' ');
-        Serial.println(pose[2]);
       }
     }
   }
@@ -298,11 +334,9 @@ class RoboUniciclo
 
 bool RoboUniciclo::flagEnc;
 
-
 ////////////////////////////////////////////////////// GLOBAIS
 
 RoboUniciclo robo;
-
 
 ////////////////////////////////////////////////////// SETUP
 
