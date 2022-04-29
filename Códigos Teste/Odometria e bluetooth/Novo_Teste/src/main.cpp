@@ -184,8 +184,8 @@ class RoboUniciclo
         case 'x':
           acionarMotores(0, 0);
           Serial.println("Selecione o modo de operação:");
-          Serial.println("t - Testar Motores");
-          Serial.println("o - Testar Odometria");
+          Serial.println("t - Modo de testes");
+          Serial.println("o - Odometria"); // atualizar
           Serial.println("m - Controle Manual");
           Serial.flush();
           while(Serial.available() > 0) Serial.read();
