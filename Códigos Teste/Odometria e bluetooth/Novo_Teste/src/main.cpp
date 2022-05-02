@@ -29,8 +29,9 @@ class Controle
   public:
   float kpLinear;
   float kpAngular;
+  float ref[3];
 
-  Controle(float kpL, float kpA)
+  void begin(float kpL, float kpA)
   {
     kpLinear = kpL;
     kpAngular = kpA;
@@ -42,7 +43,14 @@ class Controle
     kpAngular = kpA;
   }
 
-  void gerarSinalControle(float pose[3], float referencia[2], int ctrl[2])
+  void receberReferencia(float x, float y, float t)
+  {
+    ref[0] = x;
+    ref[1] = y;
+    ref[2] = t;
+  }
+
+  void gerarSinalControlePosicao(float pose[3], float referencia[3], float ctrl[2])
   {
     float dY = (referencia[1] - pose[1]);
     float dX = (referencia[0] - pose[0]);
@@ -55,11 +63,14 @@ class Controle
     float v = kpLinear * erroLinear;
     float w = kpAngular * erroAngular;
 
-    ctrl [0] = v - w;
-    ctrl [1] = v + w;
+    velocidadeCombinarComponentes(v, w, ctrl);
   }
 
-  
+  void velocidadeCombinarComponentes(float linear, float angular, float vw[2])
+  {
+    vw[0] = linear - angular;
+    vw[1] = linear + angular;
+  }
 };
 
 class Motor
@@ -143,6 +154,7 @@ class RoboUniciclo
 
   Motor MEsq, MDir;
   Encoder EEsq, EDir;
+  Controle CRef;
 
   static bool flagEnc;
 
@@ -158,11 +170,14 @@ class RoboUniciclo
     EDir.begin(ENC_RA, ENC_RB, dPhi, pulsosEncR);
     flagEnc = false;
 
+    CRef.begin(0.05, 0.2);
+
     // Colocar dentro de uma função "iniciar teste" etc
     MsTimer2::set(dt*1000, RoboUniciclo::flagEncoders); 
     MsTimer2::start();
   }
 
+  // Sinalizar que os encoders coletaram pulsos no intervalo dt
   static void flagEncoders()
   {
     flagEnc = true;
@@ -173,7 +188,7 @@ class RoboUniciclo
     if (Serial.available() > 0)
     {
       char cmd = Serial.read();
-      while (Serial.available() > 0) Serial.read();
+      // while (Serial.available() > 0) Serial.read();
 
       switch(cmd)
       {
@@ -181,7 +196,7 @@ class RoboUniciclo
           return 0;
           break;
         
-        case 'x':
+        case 'M':
           acionarMotores(0, 0);
           Serial.println("Selecione o modo de operação:");
           Serial.println("t - Modo de testes");
@@ -195,6 +210,32 @@ class RoboUniciclo
           return 1;
           break;
         
+        // Atualizar posição
+        case 'X':
+          pose[0] = Serial.parseFloat();
+          pose[1] = Serial.parseFloat();
+          pose[2] = Serial.parseFloat();
+          break;
+
+        // Receber componentes lineares e angulares de velocidade
+        case 'V':
+          float v = Serial.parseFloat();
+          float w = Serial.parseFloat();
+          float ctrl[2];
+          CRef.velocidadeCombinarComponentes(v, w, ctrl);
+          convertePWM(ctrl[0]);
+          convertePWM(ctrl[1]);
+          acionarMotores(ctrl[0], ctrl[1]);
+          break;
+        
+        // Receber novo objetivo de posição
+        case 'R':
+          float x = Serial.parseFloat();
+          float y = Serial.parseFloat();
+          float t = Serial.parseFloat();
+          CRef.receberReferencia(x, y, t);
+          break;
+
         default:
           return cmd;
           break;
