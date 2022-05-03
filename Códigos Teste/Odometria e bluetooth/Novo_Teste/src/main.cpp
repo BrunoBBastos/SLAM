@@ -21,6 +21,8 @@ void PCISetup(byte pin);
 ISR (PCINT0_vect); // Interrupt Service Routine dos pinos 8 a 13
 ISR (PCINT2_vect); // Interrupt Service Routine dos pinos 0 a 7
 float angleWrap(float ang);
+double distancia2D(float p1[2], float p2[2]);
+
 
 ////////////////////////////////////////////////////// CLASSES
 
@@ -150,7 +152,7 @@ class RoboUniciclo
   float dPhi = 2*PI / 2091.0;
   float dt = 20.0/1000;
   float pose[3] = {0.0f, 0.0f, 0.0f};
-  char modoOp = 'm';
+  char modoOp = 'i';
 
   Motor MEsq, MDir;
   Encoder EEsq, EDir;
@@ -188,64 +190,75 @@ class RoboUniciclo
     if (Serial.available() > 0)
     {
       char cmd = Serial.read();
-      // while (Serial.available() > 0) Serial.read();
+      // Serial.print(cmd);
 
       switch(cmd)
       {
-        case 'i':
-          return 0;
+
+        // Receber componentes lineares e angulares de velocidade
+        case 'V':
+          Serial.println("Recebendo velocidades");
+          modoOp = 'v';
+          float v = Serial.parseFloat(SKIP_WHITESPACE);
+          float w = Serial.parseFloat(SKIP_WHITESPACE);
+          float ctrl[2];
+          CRef.velocidadeCombinarComponentes(v, w, ctrl);
+          convertePWM(ctrl[0]);
+          convertePWM(ctrl[1]);
+          acionarMotores(ctrl[0], ctrl[1]);
+          Serial.println("Motores acionados");
           break;
         
+        // Receber novo objetivo de posição
+        case 'R':
+          Serial.println("Recebendo referência");
+          modoOp = 'r';
+          float x = Serial.parseFloat(SKIP_WHITESPACE);
+          float y = Serial.parseFloat(SKIP_WHITESPACE);
+          float t = Serial.parseFloat(SKIP_WHITESPACE);
+          CRef.receberReferencia(x, y, t);
+          float p1[2] = {pose[0], pose[1]};
+          float p2[2] = {CRef.ref[0], CRef.ref[1]};
+          Serial.print(distancia2D(p1, p2)); // Debugging
+          Serial.println(" metros"); // Debugging
+          break;
+        
+        // Atualizar posição
+        case 'X':
+          Serial.println("Recebendo nova posição");
+          // modoOp = 'x';
+          pose[0] = Serial.parseFloat(SKIP_WHITESPACE);
+          pose[1] = Serial.parseFloat(SKIP_WHITESPACE);
+          pose[2] = Serial.parseFloat(SKIP_WHITESPACE);
+          Serial.println("Pose Atualizada:");
+          for(int i = 0; i < 3; i++) Serial.println(pose[i]);
+          break;
+
         case 'M':
           acionarMotores(0, 0);
           Serial.println("Selecione o modo de operação:");
           Serial.println("t - Modo de testes");
           Serial.println("o - Odometria"); // atualizar
           Serial.println("m - Controle Manual");
-          Serial.flush();
           while(Serial.available() > 0) Serial.read();
           while(Serial.available() == 0);
           modoOp = Serial.read();
           Serial.println("Mensagem de confirmação"); // wip
-          return 1;
-          break;
-        
-        // Atualizar posição
-        case 'X':
-          pose[0] = Serial.parseFloat();
-          pose[1] = Serial.parseFloat();
-          pose[2] = Serial.parseFloat();
-          break;
-
-        // Receber componentes lineares e angulares de velocidade
-        case 'V':
-          float v = Serial.parseFloat();
-          float w = Serial.parseFloat();
-          float ctrl[2];
-          CRef.velocidadeCombinarComponentes(v, w, ctrl);
-          convertePWM(ctrl[0]);
-          convertePWM(ctrl[1]);
-          acionarMotores(ctrl[0], ctrl[1]);
-          break;
-        
-        // Receber novo objetivo de posição
-        case 'R':
-          float x = Serial.parseFloat();
-          float y = Serial.parseFloat();
-          float t = Serial.parseFloat();
-          CRef.receberReferencia(x, y, t);
           break;
 
         default:
-          return cmd;
-          break;
+          // break;
+          return -1;
       }
+      return cmd;
     }
+    return 0;
   }
 
   // Agir de acordo com o modo de execução selecionado
   void executar()
   {
+
     char cmd = ouvirSerial();
 
     switch(modoOp)
@@ -258,8 +271,12 @@ class RoboUniciclo
         testarMotores();
         break;
       
-      case 'o':
-        odometria();
+      case 'r':
+        seguirRef();
+        break;
+
+      case 'v':
+        
         break;
 
       default:
@@ -274,6 +291,22 @@ class RoboUniciclo
     int sig = abs(pwm)/ pwm;
     pwm = constrain(abs(pwm), 50, 255) * sig;
     return pwm;
+  }
+
+  bool seguirRef()
+  {
+    float pos[2] = {pose[0], pose[1]};
+    float ref[2] = {CRef.ref[0], CRef.ref[1]};
+    if(distancia2D(pos, ref) > 0.1)
+    {
+      float ctrl[2];
+      CRef.gerarSinalControlePosicao(pose, CRef.ref, ctrl);
+      ctrl[0] = convertePWM(ctrl[0]);
+      ctrl[1] = convertePWM(ctrl[1]);
+      acionarMotores(ctrl[0], ctrl[1]);
+      return 1;
+    }
+    return 0;
   }
 
   void controleManual(char cmd)
@@ -445,4 +478,9 @@ float angleWrap(float ang)
     return ang + 2 * PI;
   }
   return ang;
+}
+
+double distancia2D(float p1[2], float p2[2])
+{
+  return sqrt(pow(p2[0] - p1[0], 2) + pow(p2[1] - p1[1], 2));
 }
