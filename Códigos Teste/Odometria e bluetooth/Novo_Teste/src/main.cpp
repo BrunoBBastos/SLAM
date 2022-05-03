@@ -185,12 +185,14 @@ class RoboUniciclo
     flagEnc = true;
   }
 
-  char ouvirSerial()
+  void ouvirSerial()
   {
+    int cmd;
     if (Serial.available() > 0)
     {
-      char cmd = Serial.read();
-      // Serial.print(cmd);
+      cmd = Serial.read();
+      Serial.print(cmd);
+      Serial.print(' ');
 
       switch(cmd)
       {
@@ -245,26 +247,19 @@ class RoboUniciclo
           modoOp = Serial.read();
           Serial.println("Mensagem de confirmação"); // wip
           break;
-
-        default:
-          // break;
-          return -1;
       }
-      return cmd;
     }
-    return 0;
   }
 
   // Agir de acordo com o modo de execução selecionado
   void executar()
   {
 
-    char cmd = ouvirSerial();
+    ouvirSerial();
 
     switch(modoOp)
     {
       case 'm':
-        controleManual(cmd);
         break;
 
       case 't':
