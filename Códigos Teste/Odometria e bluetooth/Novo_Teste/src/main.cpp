@@ -153,6 +153,10 @@ class RoboUniciclo
   float dt = 20.0/1000;
   float pose[3] = {0.0f, 0.0f, 0.0f};
   char modoOp = 'i';
+  //enum MODOS {VEL = 'V', REF = 'R', POS = 'P'};
+  char VEL = 'V';
+  char REF = 'R';
+  char POS = 'P';
 
   Motor MEsq, MDir;
   Encoder EEsq, EDir;
@@ -172,7 +176,7 @@ class RoboUniciclo
     EDir.begin(ENC_RA, ENC_RB, dPhi, pulsosEncR);
     flagEnc = false;
 
-    CRef.begin(0.05, 0.2);
+    CRef.begin(0.15, 0.2);
 
     // Colocar dentro de uma função "iniciar teste" etc
     MsTimer2::set(dt*1000, RoboUniciclo::flagEncoders); 
@@ -191,30 +195,47 @@ class RoboUniciclo
     if (Serial.available() > 0)
     {
       cmd = Serial.read();
-      Serial.print(cmd);
-      Serial.print(' ');
+      Serial.println(cmd);
 
       switch(cmd)
       {
-
         // Receber componentes lineares e angulares de velocidade
         case 'V':
-          Serial.println("Recebendo velocidades");
-          modoOp = 'v';
-          float v = Serial.parseFloat(SKIP_WHITESPACE);
-          float w = Serial.parseFloat(SKIP_WHITESPACE);
-          float ctrl[2];
-          CRef.velocidadeCombinarComponentes(v, w, ctrl);
-          convertePWM(ctrl[0]);
-          convertePWM(ctrl[1]);
-          acionarMotores(ctrl[0], ctrl[1]);
-          Serial.println("Motores acionados");
+         {
+           Serial.println("Recebendo velocidades");
+            modoOp = 'V';
+            float v = Serial.parseFloat(SKIP_WHITESPACE);
+            float w = Serial.parseFloat(SKIP_WHITESPACE);
+            float ctrl[2];
+            
+
+            CRef.velocidadeCombinarComponentes(v, w, ctrl);
+
+            ctrl[0] = convertePWM(ctrl[0]);
+            ctrl[1] = convertePWM(ctrl[1]);
+
+            acionarMotores(ctrl[0], ctrl[1]);
+          }
           break;
         
+        // Atualizar posição
+        case 'P':
+        {
+            Serial.println("Recebendo nova posição");
+            modoOp = 'P';
+            pose[0] = Serial.parseFloat(SKIP_WHITESPACE);
+            pose[1] = Serial.parseFloat(SKIP_WHITESPACE);
+            pose[2] = Serial.parseFloat(SKIP_WHITESPACE);
+            Serial.println("Pose Atualizada:");
+            for(int i = 0; i < 3; i++) Serial.println(pose[i]);
+        }
+          break;
+
         // Receber novo objetivo de posição
         case 'R':
+          {
           Serial.println("Recebendo referência");
-          modoOp = 'r';
+          modoOp = 'R';
           float x = Serial.parseFloat(SKIP_WHITESPACE);
           float y = Serial.parseFloat(SKIP_WHITESPACE);
           float t = Serial.parseFloat(SKIP_WHITESPACE);
@@ -223,29 +244,23 @@ class RoboUniciclo
           float p2[2] = {CRef.ref[0], CRef.ref[1]};
           Serial.print(distancia2D(p1, p2)); // Debugging
           Serial.println(" metros"); // Debugging
+          }
           break;
         
-        // Atualizar posição
-        case 'X':
-          Serial.println("Recebendo nova posição");
-          // modoOp = 'x';
-          pose[0] = Serial.parseFloat(SKIP_WHITESPACE);
-          pose[1] = Serial.parseFloat(SKIP_WHITESPACE);
-          pose[2] = Serial.parseFloat(SKIP_WHITESPACE);
-          Serial.println("Pose Atualizada:");
-          for(int i = 0; i < 3; i++) Serial.println(pose[i]);
+        case 'M':
+          {
+            acionarMotores(0, 0);
+          }
           break;
 
-        case 'M':
-          acionarMotores(0, 0);
-          Serial.println("Selecione o modo de operação:");
-          Serial.println("t - Modo de testes");
-          Serial.println("o - Odometria"); // atualizar
-          Serial.println("m - Controle Manual");
-          while(Serial.available() > 0) Serial.read();
-          while(Serial.available() == 0);
-          modoOp = Serial.read();
-          Serial.println("Mensagem de confirmação"); // wip
+        case 'X':
+          {
+            Serial.print(pose[0]);
+            Serial.print(' ');
+            Serial.print(pose[1]);
+            Serial.print(' ');
+            Serial.println(pose[2]);
+          }
           break;
       }
     }
@@ -256,22 +271,28 @@ class RoboUniciclo
   {
 
     ouvirSerial();
+    if(flagEnc)
+    {
+      odometria();
+    }
 
     switch(modoOp)
     {
-      case 'm':
-        break;
-
       case 't':
         testarMotores();
         break;
       
-      case 'r':
+      case 'M':
+        break;
+
+      case 'R':
         seguirRef();
         break;
 
-      case 'v':
+      case 'V':
+        break;
         
+      case 'P':
         break;
 
       default:
@@ -284,7 +305,7 @@ class RoboUniciclo
     float maxVel = (rpm/60) * 2 * PI * roda_raio;
     int pwm = sinal * 255 / maxVel;
     int sig = abs(pwm)/ pwm;
-    pwm = constrain(abs(pwm), 50, 255) * sig;
+    pwm = constrain(abs(pwm), 0, 255) * sig;
     return pwm;
   }
 
@@ -302,52 +323,6 @@ class RoboUniciclo
       return 1;
     }
     return 0;
-  }
-
-  void controleManual(char cmd)
-  {
-    switch (cmd) {
-
-      case 'F':
-        acionarMotores(255, 255);
-        break;
-
-      case 'B':
-        acionarMotores(-255, -255);
-        break;
-
-      case 'L':
-        acionarMotores(-255, 255);
-        break;
-
-      case 'R':
-        acionarMotores(255, -255);
-        break;
-
-      case 'G':
-        acionarMotores(0, 255);
-        break;
-
-      case 'I':
-        acionarMotores(255, 0);
-        break;
-
-      case 'H':
-        acionarMotores(0, -255);
-        break;
-
-      case 'J':
-        acionarMotores(-255, 0);
-        break;
-
-      case 'S':
-        acionarMotores(0, 0);
-        break;
-
-      default:
-        break;
-    }
-    
   }
 
   void acionarMotores(int pwmE, int pwmD)
