@@ -176,7 +176,7 @@ class RoboUniciclo
     EDir.begin(ENC_RA, ENC_RB, dPhi, pulsosEncR);
     flagEnc = false;
 
-    CRef.begin(0.15, 0.2);
+    CRef.begin(0.5, 0.2);
 
     // Colocar dentro de uma função "iniciar teste" etc
     MsTimer2::set(dt*1000, RoboUniciclo::flagEncoders); 
@@ -253,7 +253,7 @@ class RoboUniciclo
           }
           break;
 
-        case 'X':
+        case 'O':
           {
             Serial.print(pose[0]);
             Serial.print(' ');
@@ -262,6 +262,7 @@ class RoboUniciclo
             Serial.println(pose[2]);
           }
           break;
+
       }
     }
   }
@@ -283,6 +284,7 @@ class RoboUniciclo
         break;
       
       case 'M':
+        acionarMotores(0, 0);
         break;
 
       case 'R':
@@ -313,7 +315,8 @@ class RoboUniciclo
   {
     float pos[2] = {pose[0], pose[1]};
     float ref[2] = {CRef.ref[0], CRef.ref[1]};
-    if(distancia2D(pos, ref) > 0.1)
+    float dist = distancia2D(pos, ref); 
+    if(dist > 0.05)
     {
       float ctrl[2];
       CRef.gerarSinalControlePosicao(pose, CRef.ref, ctrl);
@@ -321,6 +324,12 @@ class RoboUniciclo
       ctrl[1] = convertePWM(ctrl[1]);
       acionarMotores(ctrl[0], ctrl[1]);
       return 1;
+    }
+    else{
+      Serial.print("A ");
+      Serial.print(dist);
+      Serial.println(" m de distância do alvo");
+      modoOp = 'M';
     }
     return 0;
   }
