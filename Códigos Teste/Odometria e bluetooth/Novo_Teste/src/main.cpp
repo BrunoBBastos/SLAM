@@ -153,10 +153,6 @@ class RoboUniciclo
   float dt = 20.0/1000;
   float pose[3] = {0.0f, 0.0f, 0.0f};
   char modoOp = 'i';
-  //enum MODOS {VEL = 'V', REF = 'R', POS = 'P'};
-  char VEL = 'V';
-  char REF = 'R';
-  char POS = 'P';
 
   Motor MEsq, MDir;
   Encoder EEsq, EDir;
@@ -255,16 +251,22 @@ class RoboUniciclo
 
         case 'O':
           {
-            Serial.print(pose[0]);
-            Serial.print(' ');
-            Serial.print(pose[1]);
-            Serial.print(' ');
-            Serial.println(pose[2]);
+            imprimirOdometria();
           }
           break;
 
       }
     }
+  }
+
+  void imprimirOdometria()
+  {
+    Serial.print("O ");
+    Serial.print(pose[0]);
+    Serial.print(' ');
+    Serial.print(pose[1]);
+    Serial.print(' ');
+    Serial.println(pose[2]);
   }
 
   // Agir de acordo com o modo de execução selecionado
