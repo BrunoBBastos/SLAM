@@ -1,54 +1,84 @@
 #include "Arduino.h"
-#include <stdio.h>
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
-#include "freertos/task.h"
-#include "esp_system.h"
-#include "esp_log.h"
-#include "driver/uart.h"
-#include "string.h"
-#include "driver/gpio.h"
 
+int tDelta = 20;
+float dt = tDelta/1000.0;
 
-#define TXD_PIN (GPIO_NUM_17)
-#define RXD_PIN (GPIO_NUM_16)
-#define SERIAL_SIZE_RX 130
-static void rx_task();
+float kpLinear = 0, kpAngular = 0;
 
-void init() 
+float Pose[3] = {0.0, 0.0, 0.0};
+float Referencia[3] = {0.0, 0.0, 0.0};
+
+// #####################################################################################
+// #####################################################################################
+// #####################################################################################
+// #####################################################################################
+
+bool seguirRef()
 {
-    const uart_config_t uart_config = {
-        .baud_rate = 9600,
-        .data_bits = UART_DATA_8_BITS,
-        .parity = UART_PARITY_DISABLE,
-        .stop_bits = UART_STOP_BITS_1,
-        .flow_ctrl = UART_HW_FLOWCTRL_DISABLE
-    };
-    uart_param_config(UART_NUM_1, &uart_config);
-    uart_set_pin(UART_NUM_1, TXD_PIN, RXD_PIN, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
-    // We won't use a buffer for sending data.
-    uart_driver_install(UART_NUM_1, SERIAL_SIZE_RX, 0, 0, NULL, 0);
-}
-
-static void rx_task()
-{
-    static const char *RX_TASK_TAG = "RX_TASK";
-    uint8_t* data = (uint8_t*) malloc(SERIAL_SIZE_RX+1);
-    while (1) {
-        const int rxBytes = uart_read_bytes(UART_NUM_1, data, SERIAL_SIZE_RX, 1000 / portTICK_RATE_MS);
-        if (rxBytes > 0) {
-            data[rxBytes] = 0;
-            ESP_LOGI(RX_TASK_TAG, "Read %d bytes: '%s'", rxBytes, data);
-            ESP_LOG_BUFFER_HEXDUMP(RX_TASK_TAG, data, rxBytes, ESP_LOG_INFO);
-        }
+    float pos[2] = {Pose[0], Pose[1]};
+    float ref[2] = {Referencia[0], Referencia[1]};
+    float dist = distancia2D(pos, ref); 
+    if(dist > 0.05)
+    {
+        float ctrl[2];
+        gerarSinalControlePosicao(Pose, Referencia, ctrl);
+        Serial.print('V ');
+        Serial.print(ctrl[0]);
+        Serial.print(' ');
+        Serial.println(ctrl[1]);
+        return 1;
     }
-    free(data);
+    else
+    {
+        Serial.print('V ');
+        Serial.print(0.0);
+        Serial.print(' ');
+        Serial.println(0.0);
+    }
+    return 0;
 }
 
-
-void app_main(void)
+void gerarSinalControlePosicao(float Pose[3], float referencia[3], float ctrl[2])
 {
-    init();
-    printf("\n Start testing");
-    rx_task();
+    float dY = (referencia[1] - Pose[1]);
+    float dX = (referencia[0] - Pose[0]);
+    float THETAref = atan2(dY, dX);
+    THETAref = angleWrap(THETAref);
+
+    float erroAngular = angleWrap(THETAref - Pose[2]);
+    float erroLinear = sqrt(pow(dX, 2) + pow(dY, 2)) * cos(erroAngular);
+
+    float v = kpLinear * erroLinear;
+    float w = kpAngular * erroAngular;
+    ctrl[0] = v - w;
+    ctrl[1] = v + w;
+}
+
+float angleWrap(float ang)
+{
+    if (ang > PI)
+    {
+    return ang - 2 * PI;
+    }
+    else if (ang < -PI)
+    {
+    return ang + 2 * PI;
+    }
+    return ang;
+}
+
+double distancia2D(float p1[2], float p2[2])
+{
+    return sqrt(pow(p2[0] - p1[0], 2) + pow(p2[1] - p1[1], 2));   
+}
+
+void setup()
+{
+    Serial.begin(115200);
+
+}
+
+void loop()
+{
+
 }
