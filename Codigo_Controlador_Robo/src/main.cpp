@@ -74,7 +74,6 @@ void ouvirSerial()
   if (Serial.available() > 0)
   {
     cmd = Serial.read();
-    Serial.println(cmd);
 
     switch(cmd)
     {
