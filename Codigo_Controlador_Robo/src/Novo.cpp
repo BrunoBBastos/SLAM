@@ -19,15 +19,94 @@ const double roda_raio = 0;
 const double l = 120.0/1000;
 const double dt = 20.0/1000;
 const double dPhi = 2*PI / 2091.0;
-double Pose[3] = {0.0, 0.0, 0.0}; 
+float Pose[3] = {0.0, 0.0, 0.0}; 
 volatile long int pulsosEncL = 0, pulsosEncR = 0;
 
 void PCISetup(byte pin);
 ISR (PCINT0_vect); // Interrupt Service Routine dos pinos 8 a 13
 ISR (PCINT2_vect); // Interrupt Service Routine dos pinos 0 a 7
 float angleWrap(float ang);
-double distancia2D(float p1[2], float p2[2]);
+float distancia2D(float p1[2], float p2[2]);
 
+//CONTROLE
+float kpLinear = 0.5, kpAngular = 0.2;
+float ref[3];
+
+void gerarSinalControlePosicao(float pose[3], float referencia[3], float ctrl[2]);
+
+
+// MOTORES
+class Motor
+{
+
+  int A, B;
+
+  public:
+  void begin(int pinA, int pinB)
+  {
+    A = pinA;
+    B = pinB;
+    pinMode(A, OUTPUT);
+    pinMode(B, OUTPUT);
+  }
+
+  void acionar(int pwm)
+  {
+    if (pwm > 0)
+    {
+      analogWrite(A, pwm);
+      digitalWrite(B, 0);
+    }
+    else{
+      analogWrite(A, 0);
+      digitalWrite(B, pwm);  
+    }
+  }
+};
+
+class Encoder
+{
+
+  int A, B;
+  volatile long int *pulsos;
+  float dPhi;
+  float dt = 20.0f/1000;
+
+  public:
+  void begin(int pinA, int pinB, float deltaPhi, volatile long int &varPulsos)
+  {
+    A = pinA;
+    B = pinB;
+    dPhi = deltaPhi;
+    pulsos = &varPulsos;
+    pinMode(A, INPUT_PULLUP);
+    pinMode(B, INPUT_PULLUP);
+  }
+
+  // Observa a contagem de pulsos sem resetar o valor
+  long int contar()
+  {
+    return *pulsos;
+  }
+
+  // Observa a contagem de pulsos e reseta o valor
+  long int coletarPulsos()
+  {
+    long int total = *pulsos;
+    *pulsos = 0;
+    return total;
+  }
+
+  float velocidadeAngRoda()
+  {
+    return coletarPulsos() * dPhi/dt;
+  }
+
+};
+
+Motor MEsq, MDir;
+Encoder EEsq, EDir;
+bool flagEnc;
 
 void setup()
 {
@@ -42,6 +121,25 @@ void loop()
 {
 
 }
+
+
+void gerarSinalControlePosicao(float pose[3], float referencia[3], float ctrl[2])
+{
+  float dY = (referencia[1] - pose[1]);
+  float dX = (referencia[0] - pose[0]);
+  float THETAref = atan2(dY, dX);
+  THETAref = angleWrap(THETAref);
+
+  float erroAngular = angleWrap(THETAref - pose[2]);
+  float erroLinear = sqrt(pow(dX, 2) + pow(dY, 2)) * cos(erroAngular);
+
+  float v = kpLinear * erroLinear;
+  float w = kpAngular * erroAngular;
+
+  ctrl[0] = v - w;
+  ctrl[1] = v + w;
+}
+
 
 void odometria()
 {
@@ -71,79 +169,6 @@ void odometria()
     }
 }
 
-void ouvirSerial()
-  {
-    int cmd;
-    if (Serial.available() > 0)
-    {
-      cmd = Serial.read();
-      Serial.println(cmd);
-
-      switch(cmd)
-      {
-        // Receber componentes lineares e angulares de velocidade
-        case 'V':
-         {
-           Serial.println("Recebendo velocidades");
-            modoOp = 'V';
-            float v = Serial.parseFloat(SKIP_WHITESPACE);
-            float w = Serial.parseFloat(SKIP_WHITESPACE);
-            float ctrl[2];
-            
-
-            CRef.velocidadeCombinarComponentes(v, w, ctrl);
-
-            ctrl[0] = convertePWM(ctrl[0]);
-            ctrl[1] = convertePWM(ctrl[1]);
-
-            acionarMotores(ctrl[0], ctrl[1]);
-          }
-          break;
-        
-        // // Atualizar posição
-        // case 'P':
-        // {
-        //     Serial.println("Recebendo nova posição");
-        //     modoOp = 'P';
-        //     pose[0] = Serial.parseFloat(SKIP_WHITESPACE);
-        //     pose[1] = Serial.parseFloat(SKIP_WHITESPACE);
-        //     pose[2] = Serial.parseFloat(SKIP_WHITESPACE);
-        //     Serial.println("Pose Atualizada:");
-        //     for(int i = 0; i < 3; i++) Serial.println(pose[i]);
-        // }
-        //   break;
-
-        // // Receber novo objetivo de posição
-        // case 'R':
-        //   {
-        //   Serial.println("Recebendo referência");
-        //   modoOp = 'R';
-        //   float x = Serial.parseFloat(SKIP_WHITESPACE);
-        //   float y = Serial.parseFloat(SKIP_WHITESPACE);
-        //   float t = Serial.parseFloat(SKIP_WHITESPACE);
-        //   CRef.receberReferencia(x, y, t);
-        //   float p1[2] = {pose[0], pose[1]};
-        //   float p2[2] = {CRef.ref[0], CRef.ref[1]};
-        //   Serial.print(distancia2D(p1, p2)); // Debugging
-        //   Serial.println(" metros"); // Debugging
-        //   }
-        //   break;
-        
-        // case 'M':
-        //   {
-        //     acionarMotores(0, 0);
-        //   }
-        //   break;
-
-        // case 'O':
-        //   {
-        //     imprimirOdometria();
-        //   }
-        //   break;
-
-      }
-    }
-  }
 
 void PCISetup(byte pin)
 {
@@ -196,7 +221,7 @@ float angleWrap(float ang)
   return ang;
 }
 
-double distancia2D(float p1[2], float p2[2])
+float distancia2D(float p1[2], float p2[2])
 {
   return sqrt(pow(p2[0] - p1[0], 2) + pow(p2[1] - p1[1], 2));
 }
