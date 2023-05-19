@@ -15,66 +15,29 @@
 #define MLA                  5
 #define MLB                  6
 
+const double roda_raio = 31.75/1000;
+const double l = 120.0/1000;
+const double dt = 20.0/1000;
+const double dPhi = 2*PI / 2091.0;
+float Pose[3] = {0.0, 0.0, 0.0}; 
 volatile long int pulsosEncL = 0, pulsosEncR = 0;
+
+unsigned int t;
 
 void PCISetup(byte pin);
 ISR (PCINT0_vect); // Interrupt Service Routine dos pinos 8 a 13
 ISR (PCINT2_vect); // Interrupt Service Routine dos pinos 0 a 7
 float angleWrap(float ang);
-double distancia2D(float p1[2], float p2[2]);
+float distancia2D(float p1[2], float p2[2]);
 
+//CONTROLE
+float kpLinear = 0.5, kpAngular = 0.2;
+float ref[3];
 
-////////////////////////////////////////////////////// CLASSES
+void gerarSinalControlePosicao(float pose[3], float referencia[3], float ctrl[2]);
+void checkTimer();
 
-class Controle
-{
-  public:
-  float kpLinear;
-  float kpAngular;
-  float ref[3];
-
-  void begin(float kpL, float kpA)
-  {
-    kpLinear = kpL;
-    kpAngular = kpA;
-  }
-
-  void mudarConstantes(float kpL, float kpA)
-  {
-    kpLinear = kpL;
-    kpAngular = kpA;
-  }
-
-  void receberReferencia(float x, float y, float t)
-  {
-    ref[0] = x;
-    ref[1] = y;
-    ref[2] = t;
-  }
-
-  void gerarSinalControlePosicao(float pose[3], float referencia[3], float ctrl[2])
-  {
-    float dY = (referencia[1] - pose[1]);
-    float dX = (referencia[0] - pose[0]);
-    float THETAref = atan2(dY, dX);
-    THETAref = angleWrap(THETAref);
-
-    float erroAngular = angleWrap(THETAref - pose[2]);
-    float erroLinear = sqrt(pow(dX, 2) + pow(dY, 2)) * cos(erroAngular);
-
-    float v = kpLinear * erroLinear;
-    float w = kpAngular * erroAngular;
-
-    velocidadeCombinarComponentes(v, w, ctrl);
-  }
-
-  void velocidadeCombinarComponentes(float linear, float angular, float vw[2])
-  {
-    vw[0] = linear - angular;
-    vw[1] = linear + angular;
-  }
-};
-
+// MOTORES
 class Motor
 {
 
@@ -143,272 +106,91 @@ class Encoder
 
 };
 
-class RoboUniciclo
+Motor MEsq, MDir;
+Encoder EEsq, EDir;
+bool flagEnc;
+
+void setup()
 {
-  public:
-  float roda_raio = 31.75/1000;
-  int rpm = 100;
-  float l = 120.0/1000;
-  float dPhi = 2*PI / 2091.0;
-  float dt = 20.0/1000;
-  float pose[3] = {0.0f, 0.0f, 0.0f};
-  char modoOp = 'i';
-
-  Motor MEsq, MDir;
-  Encoder EEsq, EDir;
-  Controle CRef;
-
-  static bool flagEnc;
-
-  // Instanciar classes, inicializar pinos, etc
-  void preparar()
-  {
     Serial.begin(115200);
 
-    MEsq.begin(MLA, MLB); 
+    PCISetup(ENC_LB);
+    PCISetup(ENC_RB);
+
+    MEsq.begin(MLA, MLB);
     MDir.begin(MRB, MRA);
 
     EEsq.begin(ENC_LA, ENC_LB, dPhi, pulsosEncL);
     EDir.begin(ENC_RA, ENC_RB, dPhi, pulsosEncR);
     flagEnc = false;
 
-    CRef.begin(0.5, 0.2);
-
-    // Colocar dentro de uma função "iniciar teste" etc
-    MsTimer2::set(dt*1000, RoboUniciclo::flagEncoders); 
-    MsTimer2::start();
-  }
-
-  // Sinalizar que os encoders coletaram pulsos no intervalo dt
-  static void flagEncoders()
-  {
-    flagEnc = true;
-  }
-
-  void ouvirSerial()
-  {
-    int cmd;
-    if (Serial.available() > 0)
-    {
-      cmd = Serial.read();
-      Serial.println(cmd);
-
-      switch(cmd)
-      {
-        // Receber componentes lineares e angulares de velocidade
-        case 'V':
-         {
-           Serial.println("Recebendo velocidades");
-            modoOp = 'V';
-            float v = Serial.parseFloat(SKIP_WHITESPACE);
-            float w = Serial.parseFloat(SKIP_WHITESPACE);
-            float ctrl[2];
-            
-
-            CRef.velocidadeCombinarComponentes(v, w, ctrl);
-
-            ctrl[0] = convertePWM(ctrl[0]);
-            ctrl[1] = convertePWM(ctrl[1]);
-
-            acionarMotores(ctrl[0], ctrl[1]);
-          }
-          break;
-        
-        // Atualizar posição
-        case 'P':
-        {
-            Serial.println("Recebendo nova posição");
-            modoOp = 'P';
-            pose[0] = Serial.parseFloat(SKIP_WHITESPACE);
-            pose[1] = Serial.parseFloat(SKIP_WHITESPACE);
-            pose[2] = Serial.parseFloat(SKIP_WHITESPACE);
-            Serial.println("Pose Atualizada:");
-            for(int i = 0; i < 3; i++) Serial.println(pose[i]);
-        }
-          break;
-
-        // Receber novo objetivo de posição
-        case 'R':
-          {
-          Serial.println("Recebendo referência");
-          modoOp = 'R';
-          float x = Serial.parseFloat(SKIP_WHITESPACE);
-          float y = Serial.parseFloat(SKIP_WHITESPACE);
-          float t = Serial.parseFloat(SKIP_WHITESPACE);
-          CRef.receberReferencia(x, y, t);
-          float p1[2] = {pose[0], pose[1]};
-          float p2[2] = {CRef.ref[0], CRef.ref[1]};
-          Serial.print(distancia2D(p1, p2)); // Debugging
-          Serial.println(" metros"); // Debugging
-          }
-          break;
-        
-        case 'M':
-          {
-            acionarMotores(0, 0);
-          }
-          break;
-
-        case 'O':
-          {
-            imprimirOdometria();
-          }
-          break;
-
-      }
-    }
-  }
-
-  void imprimirOdometria()
-  {
-    Serial.print("O ");
-    Serial.print(pose[0]);
-    Serial.print(' ');
-    Serial.print(pose[1]);
-    Serial.print(' ');
-    Serial.println(pose[2]);
-  }
-
-  // Agir de acordo com o modo de execução selecionado
-  void executar()
-  {
-
-    ouvirSerial();
-    if(flagEnc)
-    {
-      odometria();
-    }
-
-    switch(modoOp)
-    {
-      case 't':
-        testarMotores();
-        break;
-      
-      case 'M':
-        acionarMotores(0, 0);
-        break;
-
-      case 'R':
-        seguirRef();
-        break;
-
-      case 'V':
-        break;
-        
-      case 'P':
-        break;
-
-      default:
-        break;
-    }
-  }
-
-  int convertePWM(float sinal)
-  {
-    float maxVel = (rpm/60) * 2 * PI * roda_raio;
-    int pwm = sinal * 255 / maxVel;
-    int sig = abs(pwm)/ pwm;
-    pwm = constrain(abs(pwm), 0, 255) * sig;
-    return pwm;
-  }
-
-  bool seguirRef()
-  {
-    float pos[2] = {pose[0], pose[1]};
-    float ref[2] = {CRef.ref[0], CRef.ref[1]};
-    float dist = distancia2D(pos, ref); 
-    if(dist > 0.05)
-    {
-      float ctrl[2];
-      CRef.gerarSinalControlePosicao(pose, CRef.ref, ctrl);
-      ctrl[0] = convertePWM(ctrl[0]);
-      ctrl[1] = convertePWM(ctrl[1]);
-      acionarMotores(ctrl[0], ctrl[1]);
-      return 1;
-    }
-    else{
-      Serial.print("A ");
-      Serial.print(dist);
-      Serial.println(" m de distância do alvo");
-      modoOp = 'M';
-    }
-    return 0;
-  }
-
-  void acionarMotores(int pwmE, int pwmD)
-  {
-    MEsq.acionar(pwmE);
-    MDir.acionar(pwmD);
-  }
-
-  void odometria()
-  {
-    if(flagEnc)
-    {
-      float vE = EEsq.velocidadeAngRoda() * roda_raio;
-      float vD = EDir.velocidadeAngRoda() * roda_raio;
-      flagEnc = false;
-      
-      if (vE == vD)
-      {
-        pose[0] += vD * cos(pose[2]) * dt; 
-        pose[1] += vD * sin(pose[2]) * dt;
-      }
-
-      else
-      {
-        float w = (vD - vE) / l;
-        float R = (l/2) * (vD + vE) / (vD - vE);
-
-        float CCIx = pose[0] - R * sin(pose[2]);
-        float CCIy = pose[1] + R * cos(pose[2]);
-
-
-        // Coletar apenas o incremento - wip
-        pose[0] = cos(dt * w) * (pose[0] - CCIx) - sin(dt*w) * (pose[1] - CCIy) + CCIx;
-        pose[1] = sin(dt * w) * (pose[0] - CCIx) + cos(dt*w) * (pose[1] - CCIy) + CCIy;
-        pose[2] = pose[2] + dt*w;
-        pose[2] = angleWrap(pose[2]);
-      }
-    }
-  }
-
-  void testarMotores()
-  {
-    acionarMotores(150, 150);
-    if(flagEnc)
-    {
-      Serial.print(EEsq.velocidadeAngRoda() * roda_raio);
-      Serial.print(' ');
-      Serial.println(EDir.velocidadeAngRoda() * roda_raio);
-      flagEnc = false;
-    }
-  }
-};
-
-bool RoboUniciclo::flagEnc;
-
-////////////////////////////////////////////////////// GLOBAIS
-
-RoboUniciclo robo;
-
-////////////////////////////////////////////////////// SETUP
-
-void setup()
-{
-  robo.preparar();
-  PCISetup(ENC_LB);
-  PCISetup(ENC_RB);
+    t = millis();
 }
-
-////////////////////////////////////////////////////// LOOP
 
 
 void loop()
 {
-  robo.executar();
+  // MEsq.acionar(-255);
+  MDir.acionar(255);
+  checkTimer();
 }
+
+void checkTimer()
+{
+  if(millis() - t >= dt)
+  {
+    Serial.println(EDir.velocidadeAngRoda());
+    t = millis();
+  }
+}
+
+
+void gerarSinalControlePosicao(float pose[3], float referencia[3], float ctrl[2])
+{
+  float dY = (referencia[1] - pose[1]);
+  float dX = (referencia[0] - pose[0]);
+  float THETAref = atan2(dY, dX);
+  THETAref = angleWrap(THETAref);
+
+  float erroAngular = angleWrap(THETAref - pose[2]);
+  float erroLinear = sqrt(pow(dX, 2) + pow(dY, 2)) * cos(erroAngular);
+
+  float v = kpLinear * erroLinear;
+  float w = kpAngular * erroAngular;
+
+  ctrl[0] = v - w;
+  ctrl[1] = v + w;
+}
+
+
+void odometria()
+{
+    float vE = pulsosEncL * dPhi/dt * roda_raio;
+    float vD = pulsosEncR * dPhi/dt * roda_raio;
+    pulsosEncL = 0;
+    pulsosEncR = 0;
+
+    if (vE == vD)
+    {
+        Pose[0] += vD * cos(Pose[2]) * dt; 
+        Pose[1] += vD * sin(Pose[2]) * dt;
+    }
+
+    else
+    {
+        float w = (vD - vE) / l;
+        float R = (l/2) * (vD + vE) / (vD - vE);
+
+        float CCIx = Pose[0] - R * sin(Pose[2]);
+        float CCIy = Pose[1] + R * cos(Pose[2]);
+
+        Pose[0] = cos(dt * w) * (Pose[0] - CCIx) - sin(dt*w) * (Pose[1] - CCIy) + CCIx;
+        Pose[1] = sin(dt * w) * (Pose[0] - CCIx) + cos(dt*w) * (Pose[1] - CCIy) + CCIy;
+        Pose[2] = Pose[2] + dt*w;
+        Pose[2] = angleWrap(Pose[2]);
+    }
+}
+
 
 void PCISetup(byte pin)
 {
@@ -461,7 +243,7 @@ float angleWrap(float ang)
   return ang;
 }
 
-double distancia2D(float p1[2], float p2[2])
+float distancia2D(float p1[2], float p2[2])
 {
   return sqrt(pow(p2[0] - p1[0], 2) + pow(p2[1] - p1[1], 2));
 }
