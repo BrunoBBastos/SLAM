@@ -130,7 +130,6 @@ void setup()
 
 void loop()
 {
-  // MEsq.acionar(-255);
   MDir.acionar(255);
   checkTimer();
 }
