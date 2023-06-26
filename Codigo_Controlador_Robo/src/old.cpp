@@ -1,7 +1,7 @@
 // ////////////////////////////////////////////////////// BIBLIOTECAS
 
 // #include "Arduino.h"
-// #include "MsTimer2.h"
+// // #include "MsTimer2.h"
 
 // ////////////////////////////////////////////////////// DEFINES
 
@@ -66,7 +66,6 @@
 //     float w = kpAngular * erroAngular;
 
 //     velocidadeCombinarComponentes(v, w, ctrl);
-    
 //   }
 
 //   void velocidadeCombinarComponentes(float linear, float angular, float vw[2])
@@ -176,8 +175,8 @@
 //     CRef.begin(0.5, 0.2);
 
 //     // Colocar dentro de uma função "iniciar teste" etc
-//     MsTimer2::set(dt*1000, RoboUniciclo::flagEncoders); 
-//     MsTimer2::start();
+//     // MsTimer2::set(dt*1000, RoboUniciclo::flagEncoders); 
+//     // MsTimer2::start();
 //   }
 
 //   // Sinalizar que os encoders coletaram pulsos no intervalo dt
