@@ -16,6 +16,15 @@
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // PARÂMETROS DO ROBÔ E COMUNICAÇÃO
+
+// State Machine
+#define STARTING  0
+#define IDLE      1
+#define REMOTE    2
+#define TRACKING  3
+
+int OperationMode = STARTING;
+
 double Pose[3] = {0.0, 0.0, 0.0};
 double Reference[3] = {0.0, 0.0, 0.0};
 double Velocities[2] = {0.0, 0.0};
@@ -41,7 +50,7 @@ TaskHandle_t Task1, Task2;
 void sendVelocities()
 {
   char buffer[50];
-  snprintf(buffer, sizeof(buffer), "V %.2f %.2f", Velocities[0], Velocities[1]);
+  snprintf(buffer, sizeof(buffer), "V %.6f %.6f", Velocities[0], Velocities[1]);
   Serial.println(buffer);
 }
 
@@ -904,9 +913,6 @@ void setup() {
         Serial.printf("\r\nCamera unavailable due to initialisation errors.\r\n\r\n");
     }
 
-    // Info line; use for Info messages; eg 'This is a Beta!' warnings, etc. as necesscary
-    // Serial.print("\r\nThis is the 4.1 beta\r\n");
-
     xTaskCreatePinnedToCore(
       Task1code, /* Function to implement the task */
       "Task1", /* Name of the task */
@@ -930,6 +936,7 @@ void setup() {
     // As a final init step chomp out the serial buffer in case we have recieved mis-keys or garbage during startup
     while (Serial.available()) Serial.read();
 
+    OperationMode = IDLE;
 }
 
 void loop() {
@@ -938,17 +945,44 @@ void loop() {
 
 void Task1code( void * pvParameters) {
   for(;;) {
+
     handleSerial();
 
-    if(!goalReached)
+    switch(OperationMode)
     {
-      move2Goal();
-    }
+      case IDLE:
+      {
 
-    if(velReady)
-    {
-      sendVelocities();
-      velReady = false;
+        break;
+      }
+
+      case REMOTE:
+      {
+        if (velReady) sendVelocities();
+
+        break;
+      }
+
+      case TRACKING:
+      {
+        if(refReady && !goalReached)
+        {
+          move2Goal();
+          sendVelocities();
+        }
+        else
+        {
+          OperationMode = IDLE;
+          return;
+        }
+
+        break;
+      }
+
+      case default:
+      {
+        OperationMode = IDLE;
+      }
     }
 
     if(askOdom && (millis() - tLastOdom) >= tDeltaMillis)
@@ -956,6 +990,8 @@ void Task1code( void * pvParameters) {
       askOdometry();
       tLastOdom = millis(); 
     }
+    
+
   }
 }
 

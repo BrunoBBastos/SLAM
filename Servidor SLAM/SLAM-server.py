@@ -1,50 +1,79 @@
+import tkinter as tk
 import cv2
 import requests
+from PIL import Image, ImageTk
 import threading
 
-def fetch_page_content(url):
-    try:
-        response = requests.get(url)
-        if response.status_code == 200:
-            print(response.text)
-        else:
-            print(f"Request failed with status code: {response.status_code}")
-    except requests.RequestException as e:
-        print(f"An error occurred: {e}")
+class Application(tk.Tk):
+    def __init__(self, ip, video_url, page_url, interval_ms):
+        super().__init__()
+        self.ip = ip
+        self.video_url = video_url
+        self.page_url = page_url
+        self.interval_ms = interval_ms
 
-def capture_and_display_video(url):
-    try:
-        cap = cv2.VideoCapture(url)
-        if not cap.isOpened():
-            print("Failed to open video stream")
-            return
+        self.video_label = tk.Label(self)
+        self.video_label.pack()
 
-        while True:
-            ret, frame = cap.read()
-            if not ret:
-                print("Failed to read frame from video stream")
-                break
+        self.page_text = tk.Text(self, height=10, width=50)
+        self.page_text.pack()
 
-            cv2.imshow("Video", frame)
-            if cv2.waitKey(1) & 0xFF == ord('q'):
-                break
+        self.start_video_stream()
+        self.start_page_content_fetching()
 
-        cap.release()
-        cv2.destroyAllWindows()
-    except cv2.error as e:
-        print(f"An error occurred: {e}")
+    def start_video_stream(self):
+        threading.Thread(target=self.video_stream_worker, daemon=True).start()
 
-def make_requests(ip, interval_ms):
-    page_url = f"http://{ip}/robot"
-    video_url = f"http://{ip}:81"
+    def video_stream_worker(self):
+        try:
+            cap = cv2.VideoCapture(self.video_url)
+            if not cap.isOpened():
+                print("Failed to open video stream")
+                return
 
-    while True:
-        threading.Thread(target=fetch_page_content, args=(page_url,), daemon=True).start()
-        threading.Thread(target=capture_and_display_video, args=(video_url,), daemon=True).start()
-        threading.Event().wait(interval_ms / 1000)  # Convert milliseconds to seconds
+            while True:
+                ret, frame = cap.read()
+                if ret:
+                    frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                    image = Image.fromarray(frame)
+                    photo = ImageTk.PhotoImage(image=image)
+                    self.video_label.configure(image=photo)
+                    self.video_label.image = photo
+
+        except cv2.error as e:
+            print(f"An error occurred: {e}")
+
+    def start_page_content_fetching(self):
+        threading.Thread(target=self.page_content_fetching_worker, daemon=True).start()
+
+    def page_content_fetching_worker(self):
+        try:
+            while True:
+                response = requests.get(self.page_url)
+                if response.status_code == 200:
+                    content = response.text
+                    self.update_page_content(content)
+                else:
+                    print(f"Request failed with status code: {response.status_code}")
+
+                # Wait for the specified interval
+                threading.Event().wait(self.interval_ms / 1000)
+
+        except requests.RequestException as e:
+            print(f"An error occurred: {e}")
+
+    def update_page_content(self, content):
+        self.page_text.delete("1.0", tk.END)
+        self.page_text.insert(tk.END, content)
+
+    def start(self):
+        self.mainloop()
 
 # Usage
-ip_address = "esp32-cam"
-interval = 1000  # 1000 milliseconds (1 second)
+ip_address = "192.168.1.85"
+video_url = f"http://{ip_address}:81"
+page_url = f"http://{ip_address}/robot"
+page_interval = 100  # 5000 milliseconds (5 seconds)
 
-make_requests(ip_address, interval)
+app = Application(ip_address, video_url, page_url, page_interval)
+app.start()
