@@ -13,7 +13,7 @@ class Application(tk.Tk):
         self.interval_ms = interval_ms
 
         self.video_label = tk.Label(self)
-        self.video_label.pack()
+        self.video_label.pack(padx=10, pady=10)
 
         self.page_text = tk.Text(self, height=10, width=50)
         self.page_text.pack()
@@ -70,10 +70,14 @@ class Application(tk.Tk):
         self.mainloop()
 
 # Usage
-ip_address = "192.168.1.85"
+ip_address = "10.0.0.100"
+# ip_address = "192.168.1.85"
 video_url = f"http://{ip_address}:81"
 page_url = f"http://{ip_address}/robot"
 page_interval = 100  # 5000 milliseconds (5 seconds)
 
-app = Application(ip_address, video_url, page_url, page_interval)
-app.start()
+
+if __name__ == '__main__':
+
+    app = Application(ip_address, video_url, page_url, page_interval)
+    app.start()
