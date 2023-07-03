@@ -41,7 +41,6 @@ const double maxVel = (RPM/60.0) * 2 * PI * roda_raio;
 bool velReady = false;
 bool refReady = false;
 unsigned int tLastOdom = 0;
-bool updateOdom = false;
 bool askOdom = false;
 bool goalReached = true;
 
@@ -127,34 +126,6 @@ int getPWM(float signal)
 {
     int pwm = constrain(signal * 255 / maxVel, -255, 255);
     return pwm;
-}
-
-void odometria()
-{
-    float vE = Pulsos[0] * dPhi/dt * roda_raio;
-    float vD = Pulsos[1] * dPhi/dt * roda_raio;
-    Pulsos[0] = 0;
-    Pulsos[1] = 0;
-
-    if (vE == vD)
-    {
-        Pose[0] += vD * cos(Pose[2]) * dt; 
-        Pose[1] += vD * sin(Pose[2]) * dt;
-    }
-
-    else
-    {
-        float w = (vD - vE) / l;
-        float R = (l/2) * (vD + vE) / (vD - vE);
-
-        float CCIx = Pose[0] - R * sin(Pose[2]);
-        float CCIy = Pose[1] + R * cos(Pose[2]);
-
-        Pose[0] = cos(dt * w) * (Pose[0] - CCIx) - sin(dt*w) * (Pose[1] - CCIy) + CCIx;
-        Pose[1] = sin(dt * w) * (Pose[0] - CCIx) + cos(dt*w) * (Pose[1] - CCIy) + CCIy;
-        Pose[2] = angleWrap(Pose[2] + dt*w);
-    }
-    updateOdom = false;
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -400,7 +371,6 @@ void handleSerial() {
         if (cmd == 'O' ) {
             Pulsos[0] += Serial.parseInt();
             Pulsos[1] += Serial.parseInt();
-            updateOdom = true;
             // Pose[2] += Serial.parseFloat();
         
         }
@@ -1030,58 +1000,55 @@ void Task1code( void * pvParameters) {
       askOdometry();
       tLastOdom = millis(); 
     }
+    
 
-    if(updateOdom)
-    {
-        odometria();
-    }
   }
 }
 
 void Task2code( void * pvParameters) {
-    for(;;) {
-        /*
-        *  Just loop forever, reconnecting Wifi As necesscary in client mode
-        * The stream and URI handler processes initiated by the startCameraServer() call at the
-        * end of setup() will handle the camera and UI processing from now on.
-        */
-        if (accesspoint) {
-            // Accespoint is permanently up, so just loop, servicing the captive portal as needed
-            // Rather than loop forever, follow the watchdog, in case we later add auto re-scan.
+  for(;;) {
+    /*
+     *  Just loop forever, reconnecting Wifi As necesscary in client mode
+     * The stream and URI handler processes initiated by the startCameraServer() call at the
+     * end of setup() will handle the camera and UI processing from now on.
+    */
+    if (accesspoint) {
+        // Accespoint is permanently up, so just loop, servicing the captive portal as needed
+        // Rather than loop forever, follow the watchdog, in case we later add auto re-scan.
+        // unsigned long start = millis();
+        // while (millis() - start < WIFI_WATCHDOG ) {
+            // delay(100);
+            if (otaEnabled) ArduinoOTA.handle();
+            // handleSerial();
+            if (captivePortal) dnsServer.processNextRequest();
+        // }
+    } else {
+        // client mode can fail; so reconnect as appropriate
+        static bool warned = false;
+        if (WiFi.status() == WL_CONNECTED) {
+            // We are connected, wait a bit and re-check
+            if (warned) {
+                // Tell the user if we have just reconnected
+                Serial.println("WiFi reconnected");
+                warned = false;
+            }
+            // loop here for WIFI_WATCHDOG, turning debugData true/false depending on serial input..
             // unsigned long start = millis();
             // while (millis() - start < WIFI_WATCHDOG ) {
                 // delay(100);
                 if (otaEnabled) ArduinoOTA.handle();
                 // handleSerial();
-                if (captivePortal) dnsServer.processNextRequest();
             // }
         } else {
-            // client mode can fail; so reconnect as appropriate
-            static bool warned = false;
-            if (WiFi.status() == WL_CONNECTED) {
-                // We are connected, wait a bit and re-check
-                if (warned) {
-                    // Tell the user if we have just reconnected
-                    Serial.println("WiFi reconnected");
-                    warned = false;
-                }
-                // loop here for WIFI_WATCHDOG, turning debugData true/false depending on serial input..
-                // unsigned long start = millis();
-                // while (millis() - start < WIFI_WATCHDOG ) {
-                    // delay(100);
-                    if (otaEnabled) ArduinoOTA.handle();
-                    // handleSerial();
-                // }
-            } else {
-                // disconnected; attempt to reconnect
-                if (!warned) {
-                    // Tell the user if we just disconnected
-                    WiFi.disconnect();  // ensures disconnect is complete, wifi scan cleared
-                    Serial.println("WiFi disconnected, retrying");
-                    warned = true;
-                }
-                WifiSetup();
+            // disconnected; attempt to reconnect
+            if (!warned) {
+                // Tell the user if we just disconnected
+                WiFi.disconnect();  // ensures disconnect is complete, wifi scan cleared
+                Serial.println("WiFi disconnected, retrying");
+                warned = true;
             }
+            WifiSetup();
         }
     }
+  }
 }

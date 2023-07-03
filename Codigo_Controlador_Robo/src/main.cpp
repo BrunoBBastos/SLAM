@@ -71,7 +71,6 @@ void acionar(int pwm, int MA, int MB)
   }
 }
 
-
 void PCISetup(byte pin)
 {
   *digitalPinToPCMSK(pin) |= bit (digitalPinToPCMSKbit(pin));
@@ -114,9 +113,6 @@ ISR (PCINT2_vect) // Interrupt Service Routine dos pinos 0 a 7
 //##############################################################################
 //##############################################################################
 
-
-unsigned long long int tLast, tCurr;
-
 void setup()
 {
     Serial.begin(115200);
@@ -137,13 +133,10 @@ void setup()
 
     while(Serial.available()) Serial.read();
     Serial.println("READY");
-    tLast = tCurr = millis();
 }
 
 void loop()
 {
-
   ouvirSerial();
-
 }
 

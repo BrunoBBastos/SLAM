@@ -1,6 +1,7 @@
 import tkinter as tk
 import cv2
 import requests
+import ast
 from PIL import Image, ImageTk
 import threading
 
@@ -13,10 +14,19 @@ class Application(tk.Tk):
         self.interval_ms = interval_ms
 
         self.video_label = tk.Label(self)
-        self.video_label.pack(padx=10, pady=10)
+        self.video_label.grid(row=0, column=0, padx=10, pady=10)
 
-        self.page_text = tk.Text(self, height=10, width=50)
-        self.page_text.pack()
+        self.pose_frame = tk.LabelFrame(self, text="Pose")
+        self.pose_frame.grid(row=0, column=1, padx=10, pady=10)
+
+        self.x_label = tk.Label(self.pose_frame, text="x:")
+        self.x_label.grid(row=0, column=0, sticky="e")
+
+        self.y_label = tk.Label(self.pose_frame, text="y:")
+        self.y_label.grid(row=1, column=0, sticky="e")
+
+        self.theta_label = tk.Label(self.pose_frame, text="theta:")
+        self.theta_label.grid(row=2, column=0, sticky="e")
 
         self.start_video_stream()
         self.start_page_content_fetching()
@@ -63,21 +73,28 @@ class Application(tk.Tk):
             print(f"An error occurred: {e}")
 
     def update_page_content(self, content):
-        self.page_text.delete("1.0", tk.END)
-        self.page_text.insert(tk.END, content)
+        try:
+            data = ast.literal_eval(content)
+            pose_values = data.get('Pose')
+            if pose_values is not None:
+                x, y, theta = map(float, pose_values.split(','))
+
+                self.x_label.configure(text=f"x: {x}")
+                self.y_label.configure(text=f"y: {y}")
+                self.theta_label.configure(text=f"theta: {theta}")
+            else:
+                print("Invalid content format: 'Pose' key not found")
+        except (SyntaxError, ValueError) as e:
+            print("Invalid content format:", e)
 
     def start(self):
         self.mainloop()
 
 # Usage
-ip_address = "10.0.0.100"
-# ip_address = "192.168.1.85"
+ip_address = "192.168.1.85"
 video_url = f"http://{ip_address}:81"
 page_url = f"http://{ip_address}/robot"
-page_interval = 100  # 5000 milliseconds (5 seconds)
+page_interval = 100  # 100 milliseconds
 
-
-if __name__ == '__main__':
-
-    app = Application(ip_address, video_url, page_url, page_interval)
-    app.start()
+app = Application(ip_address, video_url, page_url, page_interval)
+app.start()
