@@ -69,7 +69,7 @@ extern int sensorPID;
 
 extern double Pose[3];
 extern double Reference[3];
-extern double Velocities[2];
+extern int PWMsignal[2];
 extern bool velReady;
 extern bool refReady;
 extern bool goalReached;
@@ -501,10 +501,10 @@ static esp_err_t slam_handler(httpd_req *req)
     }
     if(!strcmp(variable, "vel")){ 
       char val_linear[32] = {0,}, val_angular[32] = {0,};
-      if(httpd_query_key_value(buf, "v", val_linear, sizeof(val_linear)) == ESP_OK &&
-        httpd_query_key_value(buf, "w", val_angular, sizeof(val_angular)) == ESP_OK) {
-        Velocities[0] = atoi(val_linear);
-        Velocities[1] = atoi(val_angular);
+      if(httpd_query_key_value(buf, "l", val_linear, sizeof(val_linear)) == ESP_OK &&
+        httpd_query_key_value(buf, "r", val_angular, sizeof(val_angular)) == ESP_OK) {
+        PWMsignal[0] = atoi(val_linear);
+        PWMsignal[1] = atoi(val_angular);
         velReady = true;
       }
     }
@@ -519,8 +519,8 @@ static esp_err_t robot_handler(httpd_req_t *req)
     char * p = json_response;
     *p++ = '{';
     p+=sprintf(p, "\"Pose\":\"%f, %f, %f\",", Pose[0], Pose[1], Pose[2]); // Postando a pose na página /robot
-    p+=sprintf(p, "\"Referencia\":\"%f, %f, %f\"", Reference[0], Reference[1], Reference[2]); // Postando a pose na página /robot
-    p+=sprintf(p, "\"Velocidades\":\"%d, %d\"", Velocities[0], Velocities[1]); // Postando a pose na página /robot
+    p+=sprintf(p, "\"Referencia\":\"%f, %f, %f\",", Reference[0], Reference[1], Reference[2]); // Postando a pose na página /robot
+    p+=sprintf(p, "\"Velocidades\":\"%d, %d\"", PWMsignal[0], PWMsignal[1]); // Postando a pose na página /robot
     *p++ = '}';
     *p++ = 0;
     httpd_resp_set_type(req, "application/json");

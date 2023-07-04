@@ -1,9 +1,9 @@
 import tkinter as tk
 import cv2
 import requests
-import ast
 from PIL import Image, ImageTk
 import threading
+import json
 
 class Application(tk.Tk):
     def __init__(self, ip, video_url, page_url, interval_ms):
@@ -74,27 +74,36 @@ class Application(tk.Tk):
 
     def update_page_content(self, content):
         try:
-            data = ast.literal_eval(content)
+            data = json.loads(content)
             pose_values = data.get('Pose')
-            if pose_values is not None:
-                x, y, theta = map(float, pose_values.split(','))
+            if pose_values:
+                pose_values = pose_values.split(', ')
+                if len(pose_values) == 3:
+                    x, y, theta = map(float, pose_values)
 
-                self.x_label.configure(text=f"x: {x}")
-                self.y_label.configure(text=f"y: {y}")
-                self.theta_label.configure(text=f"theta: {theta}")
-            else:
-                print("Invalid content format: 'Pose' key not found")
-        except (SyntaxError, ValueError) as e:
-            print("Invalid content format:", e)
+                    self.x_label.configure(text=f"x: {x}")
+                    self.y_label.configure(text=f"y: {y}")
+                    self.theta_label.configure(text=f"theta: {theta}")
+                else:
+                    raise ValueError("Invalid content format or missing values")
+
+        except (ValueError, json.JSONDecodeError) as e:
+            print(f"Error updating page content: {e}")
+
 
     def start(self):
         self.mainloop()
 
+
 # Usage
-ip_address = "192.168.1.85"
+# ip_address = "192.168.4.85"
+# ip_address = "192.168.1.85"
+ip_address = "10.0.0.103"
 video_url = f"http://{ip_address}:81"
 page_url = f"http://{ip_address}/robot"
 page_interval = 100  # 100 milliseconds
 
-app = Application(ip_address, video_url, page_url, page_interval)
-app.start()
+
+if __name__ == '__main__':
+    app = Application(ip_address, video_url, page_url, page_interval)
+    app.start()

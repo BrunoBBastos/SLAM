@@ -990,16 +990,20 @@ void Task1code( void * pvParameters) {
 
     switch(OperationMode)
     {
+      case STARTING:
+      {
+        OperationMode = REMOTE;
+        break;
+      }
       case IDLE:
       {
-
+        OperationMode = REMOTE;
         break;
       }
 
       case REMOTE:
       {
         if (velReady) sendVelocities();
-
         break;
       }
 
