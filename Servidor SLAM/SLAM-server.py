@@ -13,20 +13,42 @@ class Application(tk.Tk):
         self.page_url = page_url
         self.interval_ms = interval_ms
 
-        self.video_label = tk.Label(self)
-        self.video_label.grid(row=0, column=0, padx=10, pady=10)
+        self.grid_columnconfigure(0, weight=1)
+        self.grid_columnconfigure(1, weight=1)
+        self.grid_rowconfigure(0, weight=1)
 
-        self.pose_frame = tk.LabelFrame(self, text="Pose")
-        self.pose_frame.grid(row=0, column=1, padx=10, pady=10)
+        self.video_frame = tk.Frame(self)
+        self.video_frame.grid(row=0, column=0, padx=10, pady=10, sticky="nsew")
+
+        self.pose_frame = tk.LabelFrame(self, text="Pose", padx=10, pady=10)
+        self.pose_frame.grid(row=0, column=1, padx=10, pady=10, sticky="nsew")
+
+        self.referencia_frame = tk.LabelFrame(self, text="Referencia", padx=10, pady=10)
+        self.referencia_frame.grid(row=1, column=1, padx=10, pady=10, sticky="nsew")
 
         self.x_label = tk.Label(self.pose_frame, text="x:")
-        self.x_label.grid(row=0, column=0, sticky="e")
+        self.x_label.grid(row=0, column=0, sticky="e", padx=5, pady=5)
 
         self.y_label = tk.Label(self.pose_frame, text="y:")
-        self.y_label.grid(row=1, column=0, sticky="e")
+        self.y_label.grid(row=1, column=0, sticky="e", padx=5, pady=5)
 
         self.theta_label = tk.Label(self.pose_frame, text="theta:")
-        self.theta_label.grid(row=2, column=0, sticky="e")
+        self.theta_label.grid(row=2, column=0, sticky="e", padx=5, pady=5)
+
+        self.referencia_x_label = tk.Label(self.referencia_frame, text="x:")
+        self.referencia_x_label.grid(row=0, column=0, sticky="e", padx=5, pady=5)
+
+        self.referencia_y_label = tk.Label(self.referencia_frame, text="y:")
+        self.referencia_y_label.grid(row=1, column=0, sticky="e", padx=5, pady=5)
+
+        self.referencia_theta_label = tk.Label(self.referencia_frame, text="theta:")
+        self.referencia_theta_label.grid(row=2, column=0, sticky="e", padx=5, pady=5)
+
+        self.black_screen = Image.new("RGB", (640, 480), "black")
+        self.black_screen_photo = ImageTk.PhotoImage(self.black_screen)
+
+        self.video_label = tk.Label(self.video_frame)
+        self.video_label.pack()
 
         self.start_video_stream()
         self.start_page_content_fetching()
@@ -76,28 +98,37 @@ class Application(tk.Tk):
         try:
             data = json.loads(content)
             pose_values = data.get('Pose')
+            referencia_values = data.get('Referencia')
+
             if pose_values:
                 pose_values = pose_values.split(', ')
                 if len(pose_values) == 3:
                     x, y, theta = map(float, pose_values)
 
-                    self.x_label.configure(text=f"x: {x}")
-                    self.y_label.configure(text=f"y: {y}")
-                    self.theta_label.configure(text=f"theta: {theta}")
+                    self.x_label.configure(text=f"x: {x:.3f}")
+                    self.y_label.configure(text=f"y: {y:.3f}")
+                    self.theta_label.configure(text=f"theta: {theta:.3f}")
+                else:
+                    raise ValueError("Invalid content format or missing values")
+
+            if referencia_values:
+                referencia_values = referencia_values.split(', ')
+                if len(referencia_values) == 3:
+                    x, y, theta = map(float, referencia_values)
+                    self.referencia_x_label.configure(text=f"x: {x:.3f}")
+                    self.referencia_y_label.configure(text=f"y: {y:.3f}")
+                    self.referencia_theta_label.configure(text=f"theta: {theta:.3f}")
                 else:
                     raise ValueError("Invalid content format or missing values")
 
         except (ValueError, json.JSONDecodeError) as e:
             print(f"Error updating page content: {e}")
 
-
     def start(self):
         self.mainloop()
 
 
 # Usage
-# ip_address = "192.168.4.85"
-# ip_address = "192.168.1.85"
 ip_address = "10.0.0.103"
 video_url = f"http://{ip_address}:81"
 page_url = f"http://{ip_address}/robot"
