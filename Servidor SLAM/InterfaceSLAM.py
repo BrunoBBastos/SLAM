@@ -13,6 +13,8 @@ class InterfaceModule:
         self.page_url = f'{self.ip}{page_url}'
         self.interval_ms = interval_ms
 
+        self.speed = 100
+
         self.root = tk.Tk()
         self.root.title("Robot Interface")
 
@@ -107,7 +109,7 @@ class InterfaceModule:
     def update_page_content(self, content):
         try:
             data = json.loads(content)
-            pose_values = data.get('Pose')
+            pose_values = data.get('pose')
             referencia_values = data.get('Referencia')
 
             if pose_values:
@@ -164,14 +166,14 @@ class InterfaceModule:
 
     def update_robot_command(self):
         key_combinations = {
-            ("w",): (180, 180),
-            ("s",): (-180, -180),
-            ("a",): (-180, 180),
-            ("d",): (180, -180),
-            ("w", "a"): (0, 180),
-            ("w", "d"): (180, 0),
-            ("s", "a"): (0, -180),
-            ("s", "d"): (-180, 0),
+            ("w",): (self.speed, self.speed),
+            ("s",): (-self.speed, -self.speed),
+            ("a",): (-self.speed, self.speed),
+            ("d",): (self.speed, -self.speed),
+            ("w", "a"): (0, self.speed),
+            ("w", "d"): (self.speed, 0),
+            ("s", "a"): (0, -self.speed),
+            ("s", "d"): (-self.speed, 0),
         }
 
         keys = tuple(key for key, state in self.key_state.items() if state)
@@ -186,13 +188,34 @@ class InterfaceModule:
 
 
     def toggle_state(self):
+        state = ""
         if self.state == "Driving":
             self.state = "Following"
             self.toggle_button.configure(text="Following")
+            state = "FLW"
         else:
             self.state = "Driving"
             self.toggle_button.configure(text="Driving")
+            state = "DRV"
+        url = f"{self.ip}/slam?type={state}"
+        print(url)
+        response = requests.get(url)
+        if response.status_code == 200:
+            print("Robot command sent successfully")
+        else:
+            print(f"Failed to send robot command: {response.status_code}")
 
     def start(self):
         # Start the Tkinter event loop
         self.root.mainloop()
+
+
+
+
+
+
+ipEsp32 = '192.168.1.85'
+
+if __name__ == "__main__":
+    interface = InterfaceModule(ipEsp32, ':81', '/robot', 100)
+    interface.start()

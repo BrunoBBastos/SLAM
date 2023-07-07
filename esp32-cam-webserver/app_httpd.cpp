@@ -67,12 +67,18 @@ extern char otaPassword[];
 extern unsigned long xclk;
 extern int sensorPID;
 
-extern double Pose[3];
-extern double Reference[3];
-extern int PWMsignal[2];
+extern double pose[3];
+extern double reference[3];
+extern int pwmSignal[2];
 extern bool velReady;
 extern bool refReady;
 extern bool goalReached;
+ enum State {
+              STARTING,
+              DRIVING,
+              FOLLOWING
+            };
+extern State currentState;
 
 extern void sendVelocities();
 
@@ -446,12 +452,14 @@ static esp_err_t cmd_handler(httpd_req_t *req){
     return httpd_resp_send(req, NULL, 0);
 }
 
-/////////////////////////////////////////////////////////////////////////////////////////////////////
-/////////////////////////////////////////////////////////////////////////////////////////////////////
-/////////////////////////////////////////////////////////////////////////////////////////////////////
-/////////////////////////////////////////////////////////////////////////////////////////////////////
-/////////////////////////////////////////////////////////////////////////////////////////////////////
-/////////////////////////////////////////////////////////////////////////////////////////////////////
+/*
+ _____ _____ _____ _____ _____ 
+| __  |     | __  |     |_   _|
+|    -|  |  | __ -|  |  | | | 
+|__|__|_____|_____|_____| |_|  
+
+*/                               
+
 static esp_err_t slam_handler(httpd_req *req)
 {
   char*  buf;
@@ -459,7 +467,6 @@ static esp_err_t slam_handler(httpd_req *req)
     char variable[32] = {0,};
     char value[32] = {0,};
 
-    flashLED(75);
 
     buf_len = httpd_req_get_url_query_len(req) + 1;
     if (buf_len > 1) {
@@ -470,6 +477,7 @@ static esp_err_t slam_handler(httpd_req *req)
         }
         if (httpd_req_get_url_query_str(req, buf, buf_len) == ESP_OK) {
             if (httpd_query_key_value(buf, "type", variable, sizeof(variable)) == ESP_OK) {
+
             } else {
                 free(buf);
                 httpd_resp_send_404(req);
@@ -493,20 +501,29 @@ static esp_err_t slam_handler(httpd_req *req)
       if(httpd_query_key_value(buf, "x", val_x, sizeof(val_x)) == ESP_OK &&
         httpd_query_key_value(buf, "y", val_y, sizeof(val_y)) == ESP_OK &&
         httpd_query_key_value(buf, "t", val_t, sizeof(val_t)) == ESP_OK) {
-        Reference[0] = atof(val_x);
-        Reference[1] = atof(val_y);
-        Reference[2] = atof(val_t);
+        reference[0] = atof(val_x);
+        reference[1] = atof(val_y);
+        reference[2] = atof(val_t);
         goalReached = false;
       }
     }
-    if(!strcmp(variable, "vel")){ 
-      char val_linear[32] = {0,}, val_angular[32] = {0,};
-      if(httpd_query_key_value(buf, "l", val_linear, sizeof(val_linear)) == ESP_OK &&
-        httpd_query_key_value(buf, "r", val_angular, sizeof(val_angular)) == ESP_OK) {
-        PWMsignal[0] = atoi(val_linear);
-        PWMsignal[1] = atoi(val_angular);
+    else if(!strcmp(variable, "vel")){ 
+      char val_left[32] = {0,}, val_right[32] = {0,};
+      if(httpd_query_key_value(buf, "l", val_left, sizeof(val_left)) == ESP_OK &&
+        httpd_query_key_value(buf, "r", val_right, sizeof(val_right)) == ESP_OK) {
+        pwmSignal[0] = atoi(val_left);
+        pwmSignal[1] = atoi(val_right);
         velReady = true;
       }
+    }
+    else if(!strcmp(variable, "DRV")){ 
+      currentState = DRIVING;
+    flashLED(75);
+          // flashLED(75);
+    }
+    else if(!strcmp(variable, "FLW")){ 
+      currentState = FOLLOWING;
+    flashLED(75);
     }
 
     httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
@@ -518,9 +535,10 @@ static esp_err_t robot_handler(httpd_req_t *req)
     static char json_response[1024];
     char * p = json_response;
     *p++ = '{';
-    p+=sprintf(p, "\"Pose\":\"%f, %f, %f\",", Pose[0], Pose[1], Pose[2]); // Postando a pose na página /robot
-    p+=sprintf(p, "\"Referencia\":\"%f, %f, %f\",", Reference[0], Reference[1], Reference[2]); // Postando a pose na página /robot
-    p+=sprintf(p, "\"Velocidades\":\"%d, %d\"", PWMsignal[0], PWMsignal[1]); // Postando a pose na página /robot
+    p+=sprintf(p, "\"pose\":\"%f, %f, %f\",", pose[0], pose[1], pose[2]);
+    p+=sprintf(p, "\"Referencia\":\"%f, %f, %f\",", reference[0], reference[1], reference[2]); 
+    p+=sprintf(p, "\"Velocidades\":\"%d, %d\",", pwmSignal[0], pwmSignal[1]); 
+    p+=sprintf(p, "\"Modo\":\"%d\"", currentState); 
     *p++ = '}';
     *p++ = 0;
     httpd_resp_set_type(req, "application/json");
@@ -528,11 +546,13 @@ static esp_err_t robot_handler(httpd_req_t *req)
     return httpd_resp_send(req, json_response, strlen(json_response));
 }
 
-/////////////////////////////////////////////////////////////////////////////////////////////////////
-/////////////////////////////////////////////////////////////////////////////////////////////////////
-/////////////////////////////////////////////////////////////////////////////////////////////////////
-/////////////////////////////////////////////////////////////////////////////////////////////////////
-/////////////////////////////////////////////////////////////////////////////////////////////////////
+/*                             
+   _ _____ _____ _____ _____ _____ 
+  / | __  |     | __  |     |_   _|
+ / /|    -|  |  | __ -|  |  | | |  
+|_/ |__|__|_____|_____|_____| |_|  
+                                    
+*/   
 
 static esp_err_t status_handler(httpd_req_t *req){
     static char json_response[1024];
@@ -574,7 +594,7 @@ static esp_err_t status_handler(httpd_req_t *req){
         p+=sprintf(p, "\"code_ver\":\"%s\",", myVer);
         p+=sprintf(p, "\"rotate\":\"%d\",", myRotation);
         p+=sprintf(p, "\"stream_url\":\"%s\",", streamURL);
-        p+=sprintf(p, "\"Pose\":\"%f, %f, %f\"", Pose[0], Pose[1], Pose[2]); // Postando a pose na página /status
+        p+=sprintf(p, "\"pose\":\"%f, %f, %f\"", pose[0], pose[1], pose[2]); // Postando a pose na página /status
     }
     *p++ = '}';
     *p++ = 0;

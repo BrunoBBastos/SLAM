@@ -18,25 +18,26 @@
 // PARÂMETROS DO ROBÔ E COMUNICAÇÃO
 
 // State Machine
-#define STARTING  0
-#define IDLE      1
-#define REMOTE    2
-#define TRACKING  3
+enum State {
+  STARTING,
+  DRIVING,
+  FOLLOWING
+};
 
-int OperationMode = STARTING;
+State currentState = STARTING;
 
-double Pose[3] = {0.0, 0.0, 0.0};
-double Reference[3] = {0.0, 0.0, 0.0};
-int PWMsignal[2] = {0, 0};
-int Pulsos[2] = {0, 0};
+double pose[3] = {0.0, 0.0, 0.0};
+double reference[3] = {0.0, 0.0, 0.0};
+int pwmSignal[2] = {0, 0};
+int pulsos[2] = {0, 0};
 
-const double roda_raio = 31.75/1000;
-const double l = 120.0/1000;
+const double roda_raio = 31.75 / 1000;
+const double l = 120.0 / 1000;
 const int tDeltaMillis = 20;
-const double dt = tDeltaMillis/1000.0;
-const double dPhi = 2*PI / 2091.0;
+const double dt = tDeltaMillis / 1000.0;
+const double dPhi = 2 * PI / 2091.0;
 const double RPM = 100.0;
-const double maxVel = (RPM/60.0) * 2 * PI * roda_raio;
+const double maxVel = (RPM / 60.0) * 2 * PI * roda_raio;
 
 bool velReady = false;
 bool refReady = false;
@@ -45,14 +46,15 @@ bool updateOdom = false;
 bool askOdom = false;
 bool goalReached = true;
 
-float kpLinear = 0.05, kpAngular = 0.20;
+float kpLinear = 0.05;
+float kpAngular = 0.20;
 
 TaskHandle_t Task1, Task2;
 
 void sendVelocities()
 {
   char buffer[50];
-  snprintf(buffer, sizeof(buffer), "V %d %d", PWMsignal[0], PWMsignal[1]);
+  snprintf(buffer, sizeof(buffer), "V %d %d", pwmSignal[0], pwmSignal[1]);
   Serial.println(buffer);
 }
 
@@ -68,26 +70,26 @@ double distancia2D(float p1[2], float p2[2])
 
 bool move2Goal()
 {
-  float pos[2] = {Pose[0], Pose[1]};
-  float ref[2] = {Reference[0], Reference[1]};
+  float pos[2] = {pose[0], pose[1]};
+  float ref[2] = {reference[0], reference[1]};
   float dist = distancia2D(pos, ref); 
-  if(dist > 0.05)
+  if (dist > 0.05)
   {
     float ctrl[2];
-    getControl(Pose, Reference, PWMsignal);
+    getControl(pose, reference, pwmSignal);
     velReady = true;
     askOdom = true;
-    return 1;
+    return true;
   }
   else
   {
     goalReached = true;
-    PWMsignal[0] = 0;
-    PWMsignal[1] = 0;
+    pwmSignal[0] = 0;
+    pwmSignal[1] = 0;
     askOdom = false;
     velReady = true;
   }
-  return 0;
+  return false;
 }
 
 float angleWrap(float ang)
@@ -103,7 +105,7 @@ float angleWrap(float ang)
   return ang;
 }
 
-int getControl(double pose[3], double referencia[3], int ctrl[2])
+void getControl(double pose[3], double referencia[3], int ctrl[2])
 {
     float dY = (referencia[1] - pose[1]);
     float dX = (referencia[0] - pose[0]);
@@ -115,9 +117,6 @@ int getControl(double pose[3], double referencia[3], int ctrl[2])
 
     float v = kpLinear * erroLinear;
     float w = kpAngular * erroAngular;
-
-    // ctrl[0] = v;
-    // ctrl[1] = w;
 
     ctrl[0] = getPWM(v - w);
     ctrl[1] = getPWM(v + w);
@@ -131,30 +130,29 @@ int getPWM(float signal)
 
 void odometria()
 {
-    float vE = Pulsos[0] * dPhi/dt * roda_raio;
-    float vD = Pulsos[1] * dPhi/dt * roda_raio;
-    Pulsos[0] = 0;
-    Pulsos[1] = 0;
+  float vE = pulsos[0] * dPhi / dt * roda_raio;
+  float vD = pulsos[1] * dPhi / dt * roda_raio;
+  pulsos[0] = 0;
+  pulsos[1] = 0;
 
-    if (vE == vD)
-    {
-        Pose[0] += vD * cos(Pose[2]) * dt; 
-        Pose[1] += vD * sin(Pose[2]) * dt;
-    }
+  if (vE == vD)
+  {
+    pose[0] += vD * cos(pose[2]) * dt; 
+    pose[1] += vD * sin(pose[2]) * dt;
+  }
+  else
+  {
+    float w = (vD - vE) / l;
+    float R = (l / 2) * (vD + vE) / (vD - vE);
 
-    else
-    {
-        float w = (vD - vE) / l;
-        float R = (l/2) * (vD + vE) / (vD - vE);
+    float CCIx = pose[0] - R * sin(pose[2]);
+    float CCIy = pose[1] + R * cos(pose[2]);
 
-        float CCIx = Pose[0] - R * sin(Pose[2]);
-        float CCIy = Pose[1] + R * cos(Pose[2]);
-
-        Pose[0] = cos(dt * w) * (Pose[0] - CCIx) - sin(dt*w) * (Pose[1] - CCIy) + CCIx;
-        Pose[1] = sin(dt * w) * (Pose[0] - CCIx) + cos(dt*w) * (Pose[1] - CCIy) + CCIy;
-        Pose[2] = angleWrap(Pose[2] + dt*w);
-    }
-    updateOdom = false;
+    pose[0] = cos(dt * w) * (pose[0] - CCIx) - sin(dt * w) * (pose[1] - CCIy) + CCIx;
+    pose[1] = sin(dt * w) * (pose[0] - CCIx) + cos(dt * w) * (pose[1] - CCIy) + CCIy;
+    pose[2] = angleWrap(pose[2] + dt * w);
+  }
+  updateOdom = false;
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -393,19 +391,16 @@ void debugOff() {
     Serial.println("Camera debug data is disabled (send 'd' for status dump, or any other char to enable debug)");
 }
 
-// Serial input (debugging controls)
 void handleSerial() {
     if (Serial.available()) {
         char cmd = Serial.read();
         if (cmd == 'O' ) {
-            Pulsos[0] += Serial.parseInt();
-            Pulsos[1] += Serial.parseInt();
+            pulsos[0] += Serial.parseInt();
+            pulsos[1] += Serial.parseInt();
             updateOdom = true;
-            // Pose[2] += Serial.parseFloat();
-        
         }
     }
-    while (Serial.available()) Serial.read();  // chomp the buffer
+    // while (Serial.available()) Serial.read();
 }
 
 // Notification LED
@@ -976,7 +971,6 @@ void setup() {
     // As a final init step chomp out the serial buffer in case we have recieved mis-keys or garbage during startup
     while (Serial.available()) Serial.read();
 
-    OperationMode = IDLE;
 }
 
 void loop() {
@@ -988,48 +982,31 @@ void Task1code( void * pvParameters) {
 
     handleSerial();
 
-    switch(OperationMode)
-    {
+    switch (currentState) {
       case STARTING:
       {
-        OperationMode = REMOTE;
-        break;
-      }
-      case IDLE:
-      {
-        OperationMode = REMOTE;
-        break;
-      }
-
-      case REMOTE:
-      {
-        if (velReady) sendVelocities();
-        break;
-      }
-
-      case TRACKING:
-      {
-        if(refReady && !goalReached)
+          Serial.println("ESP32 READY");
+        String readyCommand = Serial.readStringUntil('\n');
+        if (readyCommand == "READY")
         {
-          move2Goal();
+          currentState = DRIVING;
+        }
+      }
+      break;
+
+      case DRIVING:
+        if(velReady) {
           sendVelocities();
+          velReady = false;
         }
-        else
-        {
-          OperationMode = IDLE;
-          return;
-        }
-
         break;
-      }
 
-      default:
-      {
-        OperationMode = IDLE;
-      }
-    }
+      case FOLLOWING:
+        // Actions for following state
+        break;
+  }
 
-    if(askOdom && (millis() - tLastOdom) >= tDeltaMillis)
+    if((millis() - tLastOdom) >= tDeltaMillis)
     {
       askOdometry();
       tLastOdom = millis(); 

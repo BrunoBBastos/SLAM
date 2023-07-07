@@ -31,8 +31,8 @@ void ouvirSerial()
 
     if (cmd == 'V')
     {
-      int r = Serial.parseFloat();
       int l = Serial.parseFloat();
+      int r = Serial.parseFloat();
         acionarMotores(l, r);
     }
 
@@ -131,12 +131,22 @@ void setup()
     pinMode(MLA, OUTPUT);
     pinMode(MLB, OUTPUT);
 
-    while(Serial.available()) Serial.read();
+    // while(Serial.available()) Serial.read();
+    while (!Serial.readStringUntil('\n').startsWith("ESP32 READY")) {}
     Serial.println("READY");
+  // Wait until the expected string is received
+
+    // String readyCommand;
+    // do
+    // {
+    //   readyCommand = Serial.readStringUntil('\n');
+    // }
+    // while (readyCommand != "START");
 }
 
 void loop()
 {
+  // acionarMotores(150, 150);
   ouvirSerial();
 }
 
