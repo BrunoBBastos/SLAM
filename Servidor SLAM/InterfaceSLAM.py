@@ -20,8 +20,15 @@ class InterfaceModule:
         self.create_referencia_frame()
         self.create_video_frame()
 
+        self.state = "Starting"  # Initial state
+        self.toggle_button = tk.Button(
+            self.root, text="Toggle", command=self.toggle_state
+        )
+        self.toggle_button.pack(pady=10)
+
         self.start_video_stream()
         self.start_page_content_fetching()
+        self.start_keyboard_control()
 
     def create_pose_frame(self):
         self.pose_frame = tk.LabelFrame(
@@ -92,7 +99,6 @@ class InterfaceModule:
                 else:
                     print(f"Request failed with status code: {response.status_code}")
 
-                # Wait for the specified interval
                 threading.Event().wait(self.interval_ms / 1000)
 
         except requests.RequestException as e:
@@ -100,12 +106,10 @@ class InterfaceModule:
 
     def update_page_content(self, content):
         try:
-            # Parse the content as JSON
             data = json.loads(content)
             pose_values = data.get('Pose')
             referencia_values = data.get('Referencia')
 
-            # Update pose values
             if pose_values:
                 pose_values = pose_values.split(', ')
                 if len(pose_values) == 3:
@@ -116,7 +120,6 @@ class InterfaceModule:
                 else:
                     raise ValueError("Invalid content format or missing values")
 
-            # Update referencia values
             if referencia_values:
                 referencia_values = referencia_values.split(', ')
                 if len(referencia_values) == 3:
@@ -129,6 +132,66 @@ class InterfaceModule:
 
         except (ValueError, json.JSONDecodeError) as e:
             print(f"Error updating page content: {e}")
+
+    def start_keyboard_control(self):
+        self.root.bind("<KeyPress>", self.on_key_press)
+        self.root.bind("<KeyRelease>", self.on_key_release)
+        self.key_state = {
+            "w": False,
+            "s": False,
+            "a": False,
+            "d": False
+        }
+        self.update_robot_command()
+
+    def on_key_press(self, event):
+        key = event.keysym.lower()
+
+        if self.state == "Driving":
+            if key in self.key_state:
+                self.key_state[key] = True
+
+        self.update_robot_command()
+
+    def on_key_release(self, event):
+        key = event.keysym.lower()
+
+        if self.state == "Driving":
+            if key in self.key_state:
+                self.key_state[key] = False
+
+        self.update_robot_command()
+
+    def update_robot_command(self):
+        key_combinations = {
+            ("w",): (180, 180),
+            ("s",): (-180, -180),
+            ("a",): (-180, 180),
+            ("d",): (180, -180),
+            ("w", "a"): (0, 180),
+            ("w", "d"): (180, 0),
+            ("s", "a"): (0, -180),
+            ("s", "d"): (-180, 0),
+        }
+
+        keys = tuple(key for key, state in self.key_state.items() if state)
+        l, r = key_combinations.get(keys, (0, 0))
+
+        url = f"{self.ip}/slam?type=vel&l={l}&r={r}"
+        response = requests.get(url)
+        if response.status_code == 200:
+            print("Robot command sent successfully")
+        else:
+            print(f"Failed to send robot command: {response.status_code}")
+
+
+    def toggle_state(self):
+        if self.state == "Driving":
+            self.state = "Following"
+            self.toggle_button.configure(text="Following")
+        else:
+            self.state = "Driving"
+            self.toggle_button.configure(text="Driving")
 
     def start(self):
         # Start the Tkinter event loop
