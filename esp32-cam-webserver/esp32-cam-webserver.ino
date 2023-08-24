@@ -28,11 +28,13 @@ State currentState = STARTING;
 
 double pose[3] = {0.0, 0.0, 0.0};
 double reference[3] = {0.0, 0.0, 0.0};
+double odometriaIncremento[3] = {0.0, 0.0, 0.0};
 int pwmSignal[2] = {0, 0};
 int pulsos[2] = {0, 0};
 
-const double roda_raio = 31.75 / 1000;
-const double l = 120.0 / 1000;
+// const double roda_raio = 31.75 / 1000;
+const double roda_raio = 63.5 / (1000 *2);
+const double l = 117.0 / 1000;
 const int tDeltaMillis = 20;
 const double dt = tDeltaMillis / 1000.0;
 const double dPhi = 2 * PI / 2091.0;
@@ -46,8 +48,8 @@ bool updateOdom = false;
 bool askOdom = false;
 bool goalReached = true;
 
-float kpLinear = 0.05;
-float kpAngular = 0.20;
+float kpLinear = 0.35;
+float kpAngular = 0.05;
 
 TaskHandle_t Task1, Task2;
 
@@ -1002,7 +1004,12 @@ void Task1code( void * pvParameters) {
         break;
 
       case FOLLOWING:
-        // Actions for following state
+        if(!goalReached)
+        {
+          move2Goal();
+          sendVelocities();
+          velReady = false;
+        }
         break;
   }
 

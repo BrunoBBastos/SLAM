@@ -81,6 +81,7 @@ extern bool goalReached;
 extern State currentState;
 
 extern void sendVelocities();
+extern float angleWrap(float ang);
 
 typedef struct {
         httpd_req_t *req;
@@ -504,6 +505,7 @@ static esp_err_t slam_handler(httpd_req *req)
         reference[0] = atof(val_x);
         reference[1] = atof(val_y);
         reference[2] = atof(val_t);
+        velReady = false;
         goalReached = false;
       }
     }
@@ -514,6 +516,20 @@ static esp_err_t slam_handler(httpd_req *req)
         pwmSignal[0] = atoi(val_left);
         pwmSignal[1] = atoi(val_right);
         velReady = true;
+        goalReached = true;
+      }
+    }
+    else if(!strcmp(variable, "pos")){
+      char val_x[32] = {0,}, val_y[32] = {0,}, val_t[32] = {0,};
+      if(httpd_query_key_value(buf, "x", val_x, sizeof(val_x)) == ESP_OK &&
+        httpd_query_key_value(buf, "y", val_y, sizeof(val_y)) == ESP_OK &&
+        httpd_query_key_value(buf, "t", val_t, sizeof(val_t)) == ESP_OK) {
+        pose[0] = atof(val_x);
+        pose[1] = atof(val_y);
+        pose[2] = atof(val_t);
+        pose[2] = angleWrap(pose[2]);
+        // velReady = false;
+        // goalReached = false;
       }
     }
     else if(!strcmp(variable, "DRV")){ 
