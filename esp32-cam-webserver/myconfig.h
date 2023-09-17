@@ -2,7 +2,6 @@
  *  Rename this example to 'myconfig.h' and fill in your details.
  *
  *  The local config is in the '.gitignore' file, which helps to keep details secret.
- teste
  */
 
 /* Give the camera a name for the web interface */
@@ -137,7 +136,7 @@ struct station stationList[] = {{"ssid1", "pass1", true},
  */
 // Initial Reslolution, default SVGA
 // available values are: FRAMESIZE_[THUMB|QQVGA|HQVGA|QVGA|CIF|HVGA|VGA|SVGA|XGA|HD|SXGA|UXGA] + [FHD|QXGA] for 3Mp Sensors; eg ov3660
-// #define DEFAULT_RESOLUTION FRAMESIZE_SVGA
+// #define DEFAULT_RESOLUTION FRAMESIZE_XGA
 
 // Hardware Horizontal Mirror, 0 or 1 (overrides default board setting)
 // #define H_MIRROR 0

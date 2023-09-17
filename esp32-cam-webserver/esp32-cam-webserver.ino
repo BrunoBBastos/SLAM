@@ -28,7 +28,7 @@ State currentState = STARTING;
 
 double pose[3] = {0.0, 0.0, 0.0};
 double reference[3] = {0.0, 0.0, 0.0};
-double odometriaIncremento[3] = {0.0, 0.0, 0.0};
+double odometriaDelta[3] = {0.0, 0.0, 0.0};
 int pwmSignal[2] = {0, 0};
 int pulsos[2] = {0, 0};
 
@@ -150,9 +150,14 @@ void odometria()
     float CCIx = pose[0] - R * sin(pose[2]);
     float CCIy = pose[1] + R * cos(pose[2]);
 
-    pose[0] = cos(dt * w) * (pose[0] - CCIx) - sin(dt * w) * (pose[1] - CCIy) + CCIx;
-    pose[1] = sin(dt * w) * (pose[0] - CCIx) + cos(dt * w) * (pose[1] - CCIy) + CCIy;
-    pose[2] = angleWrap(pose[2] + dt * w);
+    odometriaDelta[0] = cos(dt * w) * (pose[0] - CCIx) - sin(dt * w) * (pose[1] - CCIy) + CCIx - pose[0];
+    odometriaDelta[1] = sin(dt * w) * (pose[0] - CCIx) + cos(dt * w) * (pose[1] - CCIy) + CCIy - pose[1];
+    odometriaDelta[2] = angleWrap(pose[2] + dt * w) - pose[2];
+    odometriaDelta[2] = angleWrap(odometriaDelta[2]);
+    pose[0] += odometriaDelta[0];
+    pose[1] += odometriaDelta[1];
+    pose[2] = angleWrap(odometriaDelta[2] + pose[2]);
+    
   }
   updateOdom = false;
 }

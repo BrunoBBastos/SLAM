@@ -68,6 +68,7 @@ extern unsigned long xclk;
 extern int sensorPID;
 
 extern double pose[3];
+extern double odometriaDelta[3];
 extern double reference[3];
 extern int pwmSignal[2];
 extern bool velReady;
@@ -552,6 +553,7 @@ static esp_err_t robot_handler(httpd_req_t *req)
     char * p = json_response;
     *p++ = '{';
     p+=sprintf(p, "\"pose\":\"%f, %f, %f\",", pose[0], pose[1], pose[2]);
+    p+=sprintf(p, "\"odometria\":\"%f, %f, %f\",", odometriaDelta[0], odometriaDelta[1], odometriaDelta[2]);
     p+=sprintf(p, "\"Referencia\":\"%f, %f, %f\",", reference[0], reference[1], reference[2]); 
     p+=sprintf(p, "\"Velocidades\":\"%d, %d\",", pwmSignal[0], pwmSignal[1]); 
     p+=sprintf(p, "\"Modo\":\"%d\"", currentState); 
@@ -559,6 +561,11 @@ static esp_err_t robot_handler(httpd_req_t *req)
     *p++ = 0;
     httpd_resp_set_type(req, "application/json");
     httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+
+    odometriaDelta[0] = 0.0; // Limpar dados coletados
+    odometriaDelta[1] = 0.0; // Limpar dados coletados
+    odometriaDelta[2] = 0.0; // Limpar dados coletados
+
     return httpd_resp_send(req, json_response, strlen(json_response));
 }
 
