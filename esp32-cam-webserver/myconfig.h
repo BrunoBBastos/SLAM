@@ -24,7 +24,7 @@
 struct station stationList[] =  {
                                   {"Esp32_cam","projetoSLAM", true},
                                   {"saiot","u2345678", true},
-                                  {"ap401","P1st4ch3", true}
+                                  {"Ap401","P1st4ch3", true}
                                 };
 
 /*
@@ -72,7 +72,7 @@ struct station stationList[] = {{"ssid1", "pass1", true},
  *  Uncomment to enable AP mode;
  *
  */
-#define WIFI_AP_ENABLE
+// #define WIFI_AP_ENABLE
 
 /*  AP Mode Notes:
  *

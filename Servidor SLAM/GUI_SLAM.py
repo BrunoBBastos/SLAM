@@ -269,7 +269,7 @@ class InterfaceModule:
     
 
 if __name__ == "__main__":
-    # ipEsp32 = '10.0.0.104'
-    ipEsp32 = '192.168.4.84'
+    ipEsp32 = '10.0.0.104'
+    # ipEsp32 = '192.168.4.84'
     interface = InterfaceModule(ipEsp32)
     interface.start()
