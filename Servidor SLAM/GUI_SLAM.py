@@ -175,6 +175,7 @@ class InterfaceModule:
             if odometria_values:
                 odometria_values = odometria_values.split(', ')
                 if len(odometria_values) == 3:
+                    print(odometria_values)
                     x, y, theta = map(float, odometria_values)
                     self.odometriaDelta = np.array([[x], [y], [theta]])
                     # self.x += x
@@ -269,7 +270,7 @@ class InterfaceModule:
     
 
 if __name__ == "__main__":
-    ipEsp32 = '10.0.0.104'
+    ipEsp32 = '10.0.0.107'
     # ipEsp32 = '192.168.4.84'
     interface = InterfaceModule(ipEsp32)
     interface.start()

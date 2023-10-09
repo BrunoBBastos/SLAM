@@ -4,8 +4,10 @@ import json
 import threading
 import time
 import cv2
+import subprocess # pinging
+
 import qrcode as qc
-import subprocess # pingging
+
 
 class Robot:
 
@@ -15,7 +17,7 @@ class Robot:
         self.y = 0
         self.orientation = 0
         self._state = np.zeros((3, 1))
-
+        self.pose = np.array([[0.0], [0.0], [0.0]])
         self.odometryDelta = np.zeros((3, 1))
 
         self._distanceSensorMeasurement = -1
@@ -33,6 +35,7 @@ class Robot:
         self.connection_status = False
         self.start_ping_check()
 
+        print("Connecting...")
         while self.connection_status == False:
             time.sleep(1)
         print("Connected")
@@ -56,17 +59,12 @@ class Robot:
         else:
             raise ValueError("New pose must be a 3-element list or array [x, y, theta].")
 
-    # @property
-    # def connection_status(self):
-    #     return self.connection_status
-    
-    # @connection_status.setter
-    # def connection_status(self, status):
-    #     self.connection_status = status
-
     @property
     def distanceSensorMeasurement(self):
-        distance = self._distanceSensorMeasurement
+        if (self._distanceSensorMeasurement != 0) & (self._distanceSensorMeasurement != -1):
+            distance = np.array([[[self._distanceSensorMeasurement[0]], [self._distanceSensorMeasurement[1]]], self._distanceSensorMeasurement[2]]) 
+        else:
+            distance = [-1, -1]        
         self._distanceSensorMeasurement = -1
         return distance
     
@@ -75,13 +73,24 @@ class Robot:
         self._distanceSensorMeasurement = dist_ang_id
     
     def computeOdometry(self, Odometry):
+        
         self.odometryDelta += Odometry
         self._state += self.odometryDelta
+
+    def readOdometry(self):
+        odometry = np.copy(self.odometryDelta)
         self.odometryDelta = np.zeros((3, 1))
-        # print(self._state)
+        return odometry
 
+    def printState(self):
+        state = self._state
+        s = ''
+        s += f'x: {state[0,0]:.3f}, '
+        s += f'y: {state[1,0]:.3f}, '
+        s += f'\u03B8: {state[2,0]:.3f}'
+        # s+= f' {self.pose[0,0]}, {self.pose[1,0]}, {self.pose[2,0]}'
+        print(s)
     
-
 #------------------------------------------------------------- WI-FI CONNECTION
     def start_ping_check(self):
         threading.Thread(target=self.pingServer, daemon=True).start()
@@ -102,9 +111,16 @@ class Robot:
             except Exception as e:
                 return f"An error occurred: {str(e)}"
             
-            time.sleep(0.1)
+            time.sleep(1)
 
     def start_url_content_fetching(self):
+        #Defining some parameters and states the robot should run by:
+        #Start in 'drive' mode
+        url = f"http://{self.ip}/slam?type=DRV"
+        response = requests.get(url)
+        if response.status_code != 200:
+            print(f"Failed to send robot command: {response.status_code}")
+
         threading.Thread(target=self.state_url_fetching_worker, daemon=True).start()
 
     def state_url_fetching_worker(self):
@@ -125,12 +141,23 @@ class Robot:
         try:
             data = json.loads(content)
             odometry_values = data.get('odometria')
+            pose_values = data.get('pose')
 
-            if odometry_values:
-                odometry_values = odometry_values.split(', ')
-                if len(odometry_values) == 3:
-                    x, y, theta = map(float, odometry_values)
-                    self.computeOdometry(np.array([[x], [y], [theta]]))
+            # if odometry_values:
+            #     odometry_values = odometry_values.split(', ')
+            #     if len(odometry_values) == 3:
+            #         x, y, theta = map(float, odometry_values)
+            #         self.computeOdometry(np.array([[x], [y], [theta]]))
+            #     else:
+            #         raise ValueError("Invalid content format or missing values")
+                
+            if pose_values:
+                pose_values = pose_values.split(', ')
+                if len(pose_values) == 3:
+                    x, y, theta = map(float, pose_values)
+                    odometry = np.array([[x], [y], [theta]]) - self.pose
+                    self.pose = np.array([[x], [y], [theta]])
+                    self.computeOdometry(odometry)
                 else:
                     raise ValueError("Invalid content format or missing values")
 
@@ -174,12 +201,10 @@ class Robot:
         threading.Thread(target=self.run_detection, daemon=True).start()
 
     def run_detection(self):
-        print(time.time())
         while True:
             if self.stream_new_frames:
                 self._distanceSensorMeasurement = self.vision.detectAnddecod(self.stream_frames[0], self.stream_frames[1])
                 self.stream_new_frames = False
-                print(self._distanceSensorMeasurement)
 
 #------------------------------------------------------------ ROBOT MAIN
     def start_robot_mainloop(self):
@@ -191,7 +216,7 @@ class Robot:
 
 #---------------------------------------------------------------------------------------------- MAIN
 if __name__ == "__main__":
-    robot = Robot("10.0.0.104")
+    robot = Robot("10.0.0.105")
     while robot.connection_status == False:
         pass
 

@@ -32,9 +32,8 @@ double odometriaDelta[3] = {0.0, 0.0, 0.0};
 int pwmSignal[2] = {0, 0};
 int pulsos[2] = {0, 0};
 
-// const double roda_raio = 31.75 / 1000;
 const double roda_raio = 63.5 / (1000 *2);
-const double l = 117.0 / 1000;
+const double l = 121.0 / 1000;
 const int tDeltaMillis = 20;
 const double dt = tDeltaMillis / 1000.0;
 const double dPhi = 2 * PI / 2091.0;
@@ -530,7 +529,7 @@ void StartCamera() {
 
         // Get a reference to the sensor
         sensor_t * s = esp_camera_sensor_get();
-
+        s->set_special_effect(s, 2);
         // Dump camera module, warn for unsupported modules.
         sensorPID = s->id.PID;
         switch (sensorPID) {
