@@ -13,6 +13,14 @@
 #define MLA                  5
 #define MLB                  6
 
+
+enum Estado
+{
+  CONTROLADOR,
+  PWM
+};
+
+Estado modo_operacao = PWM;
 //%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 //%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% PARÂMETROS
 
@@ -135,6 +143,8 @@ void ouvirSerial();
 void acionarMotores(int pwmE, int pwmD);
 void acionar(int pwm, int MA, int MB);
 void zerarEncoders();
+void zerarOdometria();
+void printOdometria();
 float speedControl(float vel, float setpoint, float& erroAnt);
 
 
@@ -145,6 +155,13 @@ void zerarEncoders()
 {
     pulsosEncL = 0;
     pulsosEncR = 0;
+}
+
+void zerarOdometria()
+{
+  Pose[0] = 0;
+  Pose[1] = 0;
+  Pose[2] = 0;
 }
 
 void amostrarVelocidades(int pulsosEsq, int pulsosDir, float& velEsq, float& velDir)
@@ -195,9 +212,11 @@ void limparSerialNL()
 
 void ouvirSerial()
 {
+  
     if(Serial.available() > 0)
     {
         char cmd = Serial.read();
+
         if (cmd == 'V')
         {
           float l = Serial.parseFloat();
@@ -209,7 +228,22 @@ void ouvirSerial()
               velRightSetpoint = r;
           }
           else limparSerialNL();
+        }
 
+        else if(cmd == 'P')
+        {
+          
+          float l = Serial.parseInt();
+          float r = Serial.parseInt();
+          char nl = Serial.read();
+          if (!isnan(l) && !isnan(r) && nl == '\n')
+          {
+              pwmEsq = l;
+              pwmDir = r;
+          }
+          else {
+            limparSerialNL();
+          }
         }
     }
 }
@@ -230,7 +264,7 @@ void acionar(int pwm, int MA, int MB)
   else
   {
     digitalWrite(MA, 0);
-    analogWrite(MB, pwm);  
+    analogWrite(MB, abs(pwm));  
   }
 }
 
@@ -316,31 +350,59 @@ void setup()
 
 void loop()
 {
+  ouvirSerial();
     
   unsigned long t = millis();
 
-  if((t - tLastOdom) > dt)
+  switch(modo_operacao)
   {
-    
-    float vE, vD;
-    int pE = pulsosEncL;
-    int pD = pulsosEncR;
+    case CONTROLADOR:
+    {
+      if((t - tLastOdom) >= dt)
+      {
+        
+        float vE, vD;
+        int pE = pulsosEncL;
+        int pD = pulsosEncR;
 
-    zerarEncoders();
-    amostrarVelocidades(pE, pD, vE, vD);
+        zerarEncoders();
+        amostrarVelocidades(pE, pD, vE, vD);
 
-    float aE = ControlePID_atualizar(&pidEsquerdo, velLeftSetpoint, vE);
-    float aD = ControlePID_atualizar(&pidDireito, velRightSetpoint, vD);
+        float aE = ControlePID_atualizar(&pidEsquerdo, velLeftSetpoint, vE);
+        float aD = ControlePID_atualizar(&pidDireito, velRightSetpoint, vD);
 
-    pwmEsq += aE;
-    pwmEsq = constrain(pwmEsq, -255, 255);
-    pwmDir += aD;
-    pwmDir = constrain(pwmDir, -255, 255);
+        pwmEsq += aE;
+        pwmEsq = constrain(pwmEsq, -255, 255);
+        pwmDir += aD;
+        pwmDir = constrain(pwmDir, -255, 255);
 
-    acionarMotores((int)pwmEsq, (int)pwmDir);
+        acionarMotores((int)pwmEsq, (int)pwmDir);
 
-    tLastOdom = t;
+        tLastOdom = t;
+      }
+      break;
+    }
 
+    case PWM:
+    {
+      if((t - tLastOdom) >= dt)
+      {
+        
+        // float vE, vD;
+        // int pE = pulsosEncL;
+        // int pD = pulsosEncR;
+
+        // zerarEncoders();
+        // amostrarVelocidades(pE, pD, vE, vD);
+        odometria();
+        acionarMotores((int)pwmEsq, (int)pwmDir);
+        printOdometria();
+        zerarOdometria();
+
+        tLastOdom = t;
+      }
+      break;
+    }
   }
 
   ouvirSerial();
