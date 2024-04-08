@@ -3,21 +3,21 @@
 //%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 //%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% PINAGEM
 
-#define ENC_LA               13
-#define ENC_LB               12
-#define MRB                  10
-#define MRA                  11
-#define SERVO                9
-#define ENC_RA               8
-#define ENC_RB               7
-#define MLA                  5
-#define MLB                  6
-
+#define ENC_LA 13
+#define ENC_LB 12
+#define MRB 10
+#define MRA 11
+#define SERVO 9
+#define ENC_RA 8
+#define ENC_RB 7
+#define MLA 5
+#define MLB 6
 
 enum Estado
 {
   CONTROLADOR,
-  PWM
+  PWM,
+  ESPERANDO
 };
 
 Estado modo_operacao = PWM;
@@ -25,21 +25,22 @@ Estado modo_operacao = PWM;
 //%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% PARÂMETROS
 
 // ROBÔ
-const float roda_raio = 31.75/1000.0f;
+const float roda_raio = 63.7 / 2000.0f;
 const float roda_base = 120 / 1000.0f;
-const float deltaRotacao = 2*PI / 2091.0f;
+const float deltaRotacao = 2 * PI / 2091.0f;
 const float RPM = 100.0f;
-const float maxVel = (RPM/60.0f) * 2 * PI * roda_raio;
+const float maxVel = (RPM / 60.0f) * 2 * PI * roda_raio;
 
 // FUNCIONALIDADES
-unsigned int dt = 25; // Período de amostragem
-float dtms = dt/1000.0f;
-float Pose[3] = {0.0f, 0.0f, 0.0f};
+unsigned int dtms = 25; // Período de amostragem
+float dt = dtms / 1000.0f;
+double Pose[3] = {0.0f, 0.0f, 0.0f};
 
 //%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 //%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% CONTROLE
 
 unsigned long tLastOdom = 0;
+// unsigned long tLastControl = 0;
 float filtroDerivativo = 0.05f;
 float kp_vel = 10.0f;
 float ki_vel = 0.1f;
@@ -49,7 +50,8 @@ float velLeftSetpoint = 0.0, velRightSetpoint = 0.0;
 volatile long int pulsosEncL = 0, pulsosEncR = 0;
 float pwmEsq = 0, pwmDir = 0;
 
-typedef struct{
+typedef struct
+{
   // ganhos
   float kp;
   float ki;
@@ -97,23 +99,29 @@ float ControlePID_atualizar(ControlePID *pid, float setpoint, float medida)
   pid->integrador += 0.5f * pid->ki * pid->T * (erro + pid->erroAnt);
   // rotina anti-windup
   float limMinInt, limMaxInt;
-  if(pid->limMax > proporcional) limMaxInt = pid->limMax - proporcional;
-  else limMaxInt = 0.0f;
-  if(pid->limMin < proporcional) limMinInt = pid->limMin - proporcional;
-  else limMinInt = 0.0f;
+  if (pid->limMax > proporcional)
+    limMaxInt = pid->limMax - proporcional;
+  else
+    limMaxInt = 0.0f;
+  if (pid->limMin < proporcional)
+    limMinInt = pid->limMin - proporcional;
+  else
+    limMinInt = 0.0f;
   // saturador
-  if(pid->integrador > limMaxInt) pid->integrador = limMaxInt;
-  else if (pid->integrador < limMinInt) pid->integrador = limMinInt;
+  if (pid->integrador > limMaxInt)
+    pid->integrador = limMaxInt;
+  else if (pid->integrador < limMinInt)
+    pid->integrador = limMinInt;
 
   // computando o termo derivativo
-  pid->derivador = -(2.0f * pid->kd * (medida - pid->medidaAnt)
-                 + (2.0f * pid->tau - pid->T) * pid->derivador)
-                 / (2.0f * pid->tau + pid->T);
+  pid->derivador = -(2.0f * pid->kd * (medida - pid->medidaAnt) + (2.0f * pid->tau - pid->T) * pid->derivador) / (2.0f * pid->tau + pid->T);
 
   // computando a saída
   pid->output = proporcional + pid->integrador + pid->derivador;
-  if(pid->output > pid->limMax) pid->output = pid->limMax;
-  else if(pid->output < pid->limMin) pid->output = pid->limMin;
+  if (pid->output > pid->limMax)
+    pid->output = pid->limMax;
+  else if (pid->output < pid->limMin)
+    pid->output = pid->limMin;
 
   // memorizando o último update
   pid->erroAnt = erro;
@@ -122,39 +130,38 @@ float ControlePID_atualizar(ControlePID *pid, float setpoint, float medida)
   return pid->output;
 }
 
-ControlePID pidEsquerdo = { kp_vel, ki_vel, kd_vel,
-                            dtms, filtroDerivativo,
-                            maxVel, -maxVel };
-ControlePID pidDireito  = { kp_vel, ki_vel, kd_vel,
-                            dtms, filtroDerivativo,
-                            maxVel, -maxVel };
-
+ControlePID pidEsquerdo = {kp_vel, ki_vel, kd_vel,
+                           dt, filtroDerivativo,
+                           maxVel, -maxVel};
+ControlePID pidDireito = {kp_vel, ki_vel, kd_vel,
+                          dt, filtroDerivativo,
+                          maxVel, -maxVel};
 
 //%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 //%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% PROTÓTIPOS
 
 void PCISetup(byte pin);
-ISR (PCINT0_vect); // Interrupt Service Routine dos pinos 8 a 13
-ISR (PCINT2_vect); // Interrupt Service Routine dos pinos 0 a 7
+ISR(PCINT0_vect); // Interrupt Service Routine dos pinos 8 a 13
+ISR(PCINT2_vect); // Interrupt Service Routine dos pinos 0 a 7
 float angleWrap(float ang);
 double distancia2D(float p1[2], float p2[2]);
 void odometria();
 void ouvirSerial();
 void acionarMotores(int pwmE, int pwmD);
 void acionar(int pwm, int MA, int MB);
+void amostrarVelocidades(float &velEsq, float &velDir);
 void zerarEncoders();
 void zerarOdometria();
 void printOdometria();
-float speedControl(float vel, float setpoint, float& erroAnt);
-
+float speedControl(float vel, float setpoint, float &erroAnt);
 
 //%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 //%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% FUNÇÕES & UTILIDADES
 
 void zerarEncoders()
 {
-    pulsosEncL = 0;
-    pulsosEncR = 0;
+  pulsosEncL = 0;
+  pulsosEncR = 0;
 }
 
 void zerarOdometria()
@@ -164,88 +171,90 @@ void zerarOdometria()
   Pose[2] = 0;
 }
 
-void amostrarVelocidades(int pulsosEsq, int pulsosDir, float& velEsq, float& velDir)
+void amostrarVelocidades(float &velEsq, float &velDir)
 {
-    velEsq = pulsosEsq * deltaRotacao/dtms * roda_raio;
-    velDir = pulsosDir * deltaRotacao/dtms * roda_raio;
+  int pE = pulsosEncL;
+  int pD = pulsosEncR;
+  zerarEncoders();
+  velEsq = pE * deltaRotacao / dt * roda_raio;
+  velDir = pD * deltaRotacao / dt * roda_raio;
 }
 
-void calcularPoseRelativa(float velEsq, float velDir, float desloc[3])
+void calcularPoseRelativa(float velEsq, float velDir, double desloc[3])
 {
-    if (velEsq == velDir)
-    {
-        desloc[0] += velEsq * cos(desloc[2]) * dt; 
-        desloc[1] += velEsq * sin(desloc[2]) * dt;
-    }
+  if (velEsq == velDir)
+  {
+    desloc[0] += velEsq * cos(desloc[2]) * dt;
+    desloc[1] += velEsq * sin(desloc[2]) * dt;
+  }
 
-    else
-    {
-        float w = (velDir - velEsq) / roda_base; // Velocidade angular
-        float R = (roda_base/2) * (velDir + velEsq) / (velDir - velEsq); // Raio de curvatura
-        // Posição do centro de curvatura instantâneo
-        float CCIx = desloc[0] - R * sin(desloc[2]);
-        float CCIy = desloc[1] + R * cos(desloc[2]);
+  else
+  {
+    float w = (velDir - velEsq) / roda_base;                           // Velocidade angular
+    float R = (roda_base / 2) * (velDir + velEsq) / (velDir - velEsq); // Raio de curvatura
+    // Posição do centro de curvatura instantâneo
+    float CCIx = desloc[0] - R * sin(desloc[2]);
+    float CCIy = desloc[1] + R * cos(desloc[2]);
 
-        desloc[0] = cos(dt*w) * (desloc[0]-CCIx) - sin(dt*w) * (desloc[1]-CCIy) + CCIx;
-        desloc[1] = sin(dt*w) * (desloc[0]-CCIx) + cos(dt*w) * (desloc[1]-CCIy) + CCIy;
-        desloc[2] = angleWrap(desloc[2] + dt*w);
-    }
+    desloc[0] = cos(dt * w) * (desloc[0] - CCIx) - sin(dt * w) * (desloc[1] - CCIy) + CCIx;
+    desloc[1] = sin(dt * w) * (desloc[0] - CCIx) + cos(dt * w) * (desloc[1] - CCIy) + CCIy;
+    desloc[2] = angleWrap(desloc[2] + dt * w);
+  }
 }
 
-void odometria()
+void odometria(float vE, float vD)
 {
-    float vE, vD;
-    int pE = pulsosEncL;
-    int pD = pulsosEncR;
-    zerarEncoders();
-    amostrarVelocidades(pE, pD, vE, vD);
-    calcularPoseRelativa(vE, vD, Pose);
+  amostrarVelocidades(vE, vD);
+  calcularPoseRelativa(vE, vD, Pose);
 }
 
 void limparSerialNL()
 {
-    while(Serial.available() > 0)
-    {
-        if(Serial.read() == '\n') break;
-    }
+  while (Serial.available() > 0)
+  {
+    if (Serial.read() == '\n')
+      break;
+  }
 }
 
 void ouvirSerial()
 {
-  
-    if(Serial.available() > 0)
+
+  if (Serial.available() > 0)
+  {
+    char cmd = Serial.read();
+
+    if (cmd == 'V')
     {
-        char cmd = Serial.read();
-
-        if (cmd == 'V')
-        {
-          float l = Serial.parseFloat();
-          float r = Serial.parseFloat();
-          char nl = Serial.read();
-          if (!isnan(l) && !isnan(r) && nl == '\n')
-          {
-              velLeftSetpoint = l;
-              velRightSetpoint = r;
-          }
-          else limparSerialNL();
-        }
-
-        else if(cmd == 'P')
-        {
-          
-          float l = Serial.parseInt();
-          float r = Serial.parseInt();
-          char nl = Serial.read();
-          if (!isnan(l) && !isnan(r) && nl == '\n')
-          {
-              pwmEsq = l;
-              pwmDir = r;
-          }
-          else {
-            limparSerialNL();
-          }
-        }
+      float l = Serial.parseFloat();
+      float r = Serial.parseFloat();
+      char nl = Serial.read();
+      if (!isnan(l) && !isnan(r) && nl == '\n')
+      {
+        velLeftSetpoint = l;
+        velRightSetpoint = r;
+      }
+      else
+        limparSerialNL();
     }
+
+    else if (cmd == 'P')
+    {
+
+      float l = Serial.parseInt();
+      float r = Serial.parseInt();
+      char nl = Serial.read();
+      if (!isnan(l) && !isnan(r) && nl == '\n')
+      {
+        pwmEsq = l;
+        pwmDir = r;
+      }
+      else
+      {
+        limparSerialNL();
+      }
+    }
+  }
 }
 
 void acionarMotores(int pwmE, int pwmD)
@@ -264,23 +273,23 @@ void acionar(int pwm, int MA, int MB)
   else
   {
     digitalWrite(MA, 0);
-    analogWrite(MB, abs(pwm));  
+    analogWrite(MB, abs(pwm));
   }
 }
 
 void PCISetup(byte pin)
 {
-  *digitalPinToPCMSK(pin) |= bit (digitalPinToPCMSKbit(pin));
+  *digitalPinToPCMSK(pin) |= bit(digitalPinToPCMSKbit(pin));
   PCIFR |= bit(digitalPinToPCICRbit(pin));
   PCICR |= bit(digitalPinToPCICRbit(pin));
 }
 
-ISR (PCINT0_vect) // Interrupt Service Routine dos pinos 8 a 13
+ISR(PCINT0_vect) // Interrupt Service Routine dos pinos 8 a 13
 {
   bool A = digitalRead(ENC_LA);
   bool B = digitalRead(ENC_LB);
 
-  if(A == B)
+  if (A == B)
   {
     pulsosEncL--;
   }
@@ -290,12 +299,12 @@ ISR (PCINT0_vect) // Interrupt Service Routine dos pinos 8 a 13
   }
 }
 
-ISR (PCINT2_vect) // Interrupt Service Routine dos pinos 0 a 7
+ISR(PCINT2_vect) // Interrupt Service Routine dos pinos 0 a 7
 {
   bool A = digitalRead(ENC_RA);
   bool B = digitalRead(ENC_RB);
 
-  if(A == B)
+  if (A == B)
   {
     pulsosEncR++;
   }
@@ -323,26 +332,27 @@ float angleWrap(float ang)
 
 void setup()
 {
-    Serial.begin(115200);
-    while(!Serial){};
-    
-    PCISetup(ENC_LB);
-    PCISetup(ENC_RB);
+  Serial.begin(115200);
+  while (!Serial)
+  {
+  };
 
-    pinMode(ENC_LA, INPUT_PULLUP);
-    pinMode(ENC_LB, INPUT_PULLUP);
-    pinMode(ENC_RA, INPUT_PULLUP);
-    pinMode(ENC_RB, INPUT_PULLUP);
+  PCISetup(ENC_LB);
+  PCISetup(ENC_RB);
 
-    pinMode(MRA, OUTPUT);
-    pinMode(MRB, OUTPUT);
-    pinMode(MLA, OUTPUT);
-    pinMode(MLB, OUTPUT);
+  pinMode(ENC_LA, INPUT_PULLUP);
+  pinMode(ENC_LB, INPUT_PULLUP);
+  pinMode(ENC_RA, INPUT_PULLUP);
+  pinMode(ENC_RB, INPUT_PULLUP);
 
-    ControlePID_ini(&pidEsquerdo);
-    ControlePID_ini(&pidDireito);
+  pinMode(MRA, OUTPUT);
+  pinMode(MRB, OUTPUT);
+  pinMode(MLA, OUTPUT);
+  pinMode(MLB, OUTPUT);
 
-    Serial.println("READY");
+  ControlePID_ini(&pidEsquerdo);
+  ControlePID_ini(&pidDireito);
+
 }
 
 //%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -351,23 +361,21 @@ void setup()
 void loop()
 {
   ouvirSerial();
-    
+
   unsigned long t = millis();
 
-  switch(modo_operacao)
+  if(t - tLastOdom >= dtms)
   {
-    case CONTROLADOR:
+    float vE, vD;
+    odometria(vE, vD);
+    printOdometria();
+    // zerarOdometria();
+    tLastOdom = t;
+
+    switch(modo_operacao)
     {
-      if((t - tLastOdom) >= dt)
+      case CONTROLADOR:
       {
-        
-        float vE, vD;
-        int pE = pulsosEncL;
-        int pD = pulsosEncR;
-
-        zerarEncoders();
-        amostrarVelocidades(pE, pD, vE, vD);
-
         float aE = ControlePID_atualizar(&pidEsquerdo, velLeftSetpoint, vE);
         float aD = ControlePID_atualizar(&pidDireito, velRightSetpoint, vD);
 
@@ -375,39 +383,26 @@ void loop()
         pwmEsq = constrain(pwmEsq, -255, 255);
         pwmDir += aD;
         pwmDir = constrain(pwmDir, -255, 255);
-
         acionarMotores((int)pwmEsq, (int)pwmDir);
 
-        tLastOdom = t;
+        break;
       }
-      break;
-    }
 
-    case PWM:
-    {
-      if((t - tLastOdom) >= dt)
+      case PWM:
       {
-        
-        // float vE, vD;
-        // int pE = pulsosEncL;
-        // int pD = pulsosEncR;
-
-        // zerarEncoders();
-        // amostrarVelocidades(pE, pD, vE, vD);
-        odometria();
         acionarMotores((int)pwmEsq, (int)pwmDir);
-        printOdometria();
-        zerarOdometria();
-
-        tLastOdom = t;
+        break;
       }
-      break;
+
+      case ESPERANDO:
+      {
+        Serial.println("READY");
+        modo_operacao = PWM;
+        break;
+      }
     }
   }
-
-  ouvirSerial();
 }
-
 
 void printVelocidades(float vE, float vD)
 {
@@ -418,10 +413,20 @@ void printVelocidades(float vE, float vD)
 
 void printOdometria()
 {
+  // char buffer[50];
+  // char x[10], y[10], t[10];
+  // dtostrf(Pose[0], 3, 8, x);
+  // dtostrf(Pose[1], 3, 8, y);
+  // dtostrf(Pose[2], 3, 8, t);
+  
+  // snprintf(buffer, sizeof(buffer),
+  //         "O %s %s %s\n",
+  //         x, y, t);
+  // Serial.print(buffer);
   Serial.print("O ");
-  Serial.print(Pose[0]);
+  Serial.print(Pose[0], 6);
   Serial.print(" ");
-  Serial.print(Pose[1]);
+  Serial.print(Pose[1], 6);
   Serial.print(" ");
-  Serial.println(Pose[2]);
+  Serial.println(Pose[2], 6);
 }
