@@ -1,17 +1,19 @@
+#%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% BIBLIOTECAS
 import numpy as np
-from numpy import random
 from numpy.linalg import inv
-import numpy.matlib
 import math
 import matplotlib.pyplot as plt
-import scipy.linalg as LA
+import matplotlib.patches as pat
 import paho.mqtt.client as mqtt
 import simplejson as json
-import keyboard
+# import keyboard
+# import scipy.linalg as LA
+# import numpy.matlib
+# from numpy import random
 
 
 
-##################################### UTILIDADES
+#%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% TRANSFORMAÇÕES E UTILIDADES
 def angleWrap(ang):
 	if ang > np.pi:
 		return ang - 2 * np.pi
@@ -41,38 +43,29 @@ def tinv(tab):
 def tinv1(tab):
 	s = np.sin(tab[2])
 	c = np.cos(tab[2])
-	tba = np.array([-tab[0] * c - tab[1] * s, tab[0] * s - tab[1] * c, -tab[2]]).reshape(3, 1)
+	tba = np.array([-tab[0] * c - tab[1] * s,
+				 	tab[0] * s - tab[1] * c,
+					-tab[2]]).reshape(3, 1)
 	return tba
+#%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% TRANSFORMÇÕES E UTILIDADES
 
-##################################### FUNÇÕES
-def GetRobotControl(k):
-	return np.array([0, 0.025, 0.1 * np.pi / 180 * np.sin(3 * np.pi * k / nSteps)]).reshape(3, 1)
-	# return np.array([0, 0.025, 0]).reshape(3, 1)
+#%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% SINAIS E MODELOS
 
-# def GetOdometry(k):
-# 	# Aparentemente python não tem uma forma persistente como 'static' do C++ ou 'persistent' do MATLAB, mas isso deve funcionar:
-# 	# GetOdometry.LastOdom # internal to Robot low-level controller
-# 	global UTrue
-# 	if k == 0:
-# 		GetOdometry.LastOdom = np.copy(XTrue)
-# 	u = GetRobotControl(k)
-# 	xnow = tcomp(GetOdometry.LastOdom, u)
-# 	uNoise = np.sqrt(UTrue).dot(random.normal(0, 1, (3, 1)))
-# 	xnow = tcomp(xnow, uNoise)
-# 	GetOdometry.LastOdom = np.copy(xnow)
-# 	return xnow
+def GetObservation(k):
+	global obsMQTT
+	if obsMQTT [2]== -1:
+		return (np.zeros((2,1)), -1)
 
-def GetOdometry(k):
-	global odomMQTT
-	prov = np.copy(odomMQTT)
-	# odomMQTT = np.array([[0.], [0.], [0.]])
-	return prov
-
+	prov = np.copy(obsMQTT)
+	# prov = [[prov[0], [prov[1]]], prov[2]]
+	z = np.array([[prov[0, 0]], [prov[1, 0]]]).astype(np.float64)
+	iFeature = prov[2, 0]
+	return (z, iFeature)
 
 def GetObsJac(xPred, iFeature, Map):
 	jH = np.zeros((2, 3))
 	Delta = Map[iFeature].reshape(2, 1) - xPred[0:2]
-	r = LA.norm(Delta)
+	r = np.linalg.norm(Delta)
 	jH[0, 0] = -Delta[0] / r
 	jH[0, 1] = -Delta[1] / r
 	jH[1, 0] = Delta[1] / r**2
@@ -80,19 +73,18 @@ def GetObsJac(xPred, iFeature, Map):
 	jH[1, 2] = -1
 	return jH
 
-def simulateWorld(k):
-	global XTrue
-	u = GetRobotControl(k)
-	XTrue = tcomp(XTrue, u)
-	XTrue[2] = angleWrap(XTrue[2])
-
 def doObservationModel(xVeh, iFeature, Map):
 	# Delta = Map[:, iFeature].reshape(2, 1) - xVeh[0:2]
 	Delta = Map[iFeature].reshape(2, 1) - xVeh[0:2]
 	at = np.arctan2(Delta[1], Delta[0]) - xVeh[2] # Evitar incluir array dentro de array
-	z = np.array([LA.norm(Delta), at[0]]).reshape(2, 1)
+	z = np.array([np.linalg.norm(Delta), at[0]]).reshape(2, 1)
 	z[1] = angleWrap(z[1])
 	return z
+
+def GetOdometry(k):
+	global odomMQTT
+	prov = np.copy(odomMQTT)
+	return prov
 
 def J1(x1, x2):
 	s1 = np.sin(x1[2])
@@ -112,29 +104,7 @@ def J2(x1, x2):
 			   [0, 0, 1]], dtype = object)
 	return Jac
 
-# def GetObservation(k):
-# 	global Map, XTrue, RTrue, nSteps
-# 	# Simular falha nos sensores
-# 	if abs(k - nSteps/2) < 0.1 * nSteps:
-# 		z = np.empty(0)
-# 		iFeature = -1
-# 	else:
-# 		iFeature = int(np.floor(Map[0].size * np.random.uniform()))
-# 		z = doObservationModel(XTrue, iFeature, Map) + np.sqrt(np.diag(RTrue)).reshape(2, 1) * random.normal(0, 1, size = (2, 1))
-# 		z[1] = angleWrap(z[1])
-# 	return z, iFeature
-
-def GetObservation(k):
-	global obsMQTT
-	if obsMQTT [2]== -1:
-		return (np.zeros((2,1)), -1)
-
-	prov = np.copy(obsMQTT)
-	# prov = [[prov[0], [prov[1]]], prov[2]]
-	z = np.array([[prov[0, 0]], [prov[1, 0]]]).astype(np.float64)
-	iFeature = prov[2, 0]
-	return (z, iFeature)
-
+#%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% GRÁFICOS
 def DoGraphs():
 	global XTrue, XEst, PEst
 	plt.clf()
@@ -169,27 +139,37 @@ def DrawRobot(Xr, col):
 	plt.plot(P[0, :], P[1, :], color = col)
 	plt.plot(Xr[0], Xr[1], color = col)
 
-
-
 def PlotEllipse(x, Po, nSigma):
-	x = np.copy(x[0:2])
-	P = np.empty((2, 2)) # Copiando dessa forma por causa dos problemas de formatação da np
-	for i in range(2):
-		for j in range(2):
-			P[i, j] = Po[i, j][0]
-	if not 0 in np.diag(P):
-		D, V = np.linalg.eig(P)
-		D = np.diag(D)
-		s = np.linspace(0, 2 * np.pi, 50)
-		pX = []
-		pY = []
-		for i in s:
-			y = nSigma * np.array([[np.cos(i)], [np.sin(i)]])
-			el = V.dot(LA.sqrtm(D)).dot(y)
-			el =  np.matlib.repmat(x, 1, len(el[0]) + 1) + np.concatenate((el, el), axis = 1)
-			pX += [el[0,0]]
-			pY += [el[1,0]]
-		plt.plot(pX, pY, color = 'red')
+	# x = np.copy(x[0:2])
+	# P = np.empty((2, 2)) # Copiando dessa forma por causa dos problemas de formatação da np
+	# for i in range(2):
+	# 	for j in range(2):
+	# 		P[i, j] = Po[i, j][0]
+	# if not 0 in np.diag(P):
+	# 	D, V = np.linalg.eig(P)
+	# 	D = np.diag(D)
+	# 	s = np.linspace(0, 2 * np.pi, 50)
+	# 	pX = []
+	# 	pY = []
+	# 	for i in s:
+	# 		y = nSigma * np.array([[np.cos(i)], [np.sin(i)]])
+	# 		el = V.dot(LA.sqrtm(D)).dot(y)
+	# 		el =  np.matlib.repmat(x, 1, len(el[0]) + 1) + np.concatenate((el, el), axis = 1)
+	# 		pX += [el[0,0]]
+	# 		pY += [el[1,0]]
+	# 	plt.plot(pX, pY, color = 'red')
+	eigenvalues, eigenvectors = np.linalg.eig(Po)
+	ang = np.degrees(np.arctan2(eigenvectors[1, 0], eigenvectors[0, 0]))
+	largura = 2 * nSigma * np.sqrt(eigenvalues[0])
+	altura = 2 * nSigma * np.sqrt(eigenvalues[1])
+
+	ellipse = pat.Ellipse(xy=(x[0], x[1]),
+					   	  width=largura, height=altura, angle=ang, alpha=0.5,
+						  edgecolor='blue', facecolor = 'none')
+	plt.gca().add_patch(ellipse)
+#%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% GRÁFICOS
+
+#%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% MQTT
 
 def on_connect(client, userdata, flags, reason_code, properties):
 	if(reason_code==0):
@@ -206,12 +186,17 @@ def on_message(client, userdata, msg):
 		odomstr = str(msg.payload.decode())
 		odomstr = json.loads(odomstr)
 		odomvalues = odomstr["odometria"].split(', ')
-		odomMQTT = (np.array([[odomvalues[0]], [odomvalues[1]], [odomvalues[2]]], dtype = 'float32'))
+		odomMQTT = (np.array([[odomvalues[0]],
+							  [odomvalues[1]],
+							  [odomvalues[2]]],
+							  dtype = 'float32'))
 
 	elif (msg.topic == "robot/observation"):
 		obsstr = str(msg.payload.decode())
 		obsstr = json.loads(obsstr)
-		obsMQTT = np.array([[obsstr["r"]], [obsstr["theta"]], [obsstr["label"]]])
+		obsMQTT = np.array([[obsstr["r"]],
+					  		[obsstr["theta"]],
+							[obsstr["label"]]])
 
 	elif (msg.topic == "controle/stop"):
 			RunSim = False
@@ -224,9 +209,9 @@ def on_subscribe(client, obj, mid, reason_code_list, properties):
 
 def on_publish(client, obj, mid, reason_code, properties):
 	pass
+#%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% MQTT
 
 ###################################################################### EXECUÇÃO
-nSteps = 6000
 
 ################# MQTT ####################
 mqtt_broker = "10.7.220.187"
@@ -242,32 +227,11 @@ topic_odometria = "slam/odometria"
 topic_xest = "slam/xest"
 ##########################################
 
-# Map = 5 * np.random.uniform(size = (2, 10)) - 2.5
-# Map [[x1,x2,...,xn],[y1,y2,..,yn]]
-
-# Map = np.array([[0.8,1.6],[0,1.6]])
 Map = {
- 	#"cubo1":		np.array([-0.80, -0.80]),
-	#"cubo2":		np.array([-0.80, 0.80]),
 	"cubo1":		np.array([0., -0.20]),
 	"cubo2":		np.array([-0.20, 1.60]),
 	"cubo3":		np.array([1.60, 1.80]),
-    #"parede6": 	np.array([-3.60, -3.15]),
-    #"parede5": 	np.array([-6.40, -3.20]),
-	#"parede2": 	np.array([-2.065, 2.685]),
-	# "parede1": 	np.array([1.525, 0.225]),
-	#"parede4": 	np.array([-9.165, 0.0]),
-	# "porta1": 	np.array([-0.42, -3.25]),
-	#"parede3": 	np.array([-5.92, 2.685]),
-	#"armario3": np.array([-7.225, -0.865]),
-	#"porta2": 	np.array([.80, -3.25]),
-	# "armario1": np.array([0.89, -1.43]),
-	# "armario2": np.array([0.04, 2.17]),
-	# "fuleira1": np.array([0.8, 0.8]),
-	# "fuleira2": np.array([-0.8, -0.8]),
-	# "fuleira3": np.array([-1, 1]),
 }
-
 
 UTrue = np.diag([0.01, 0.01, 2* np.pi / 180])**2
 RTrue = np.diag([0.5, 1.5* np.pi / 180])**2
@@ -300,8 +264,7 @@ lyXpred = list()
 gif = 0
 k = 0
 while(RunSim):
-
-	# simulateWorld(k)
+	# PREDIÇÃO
 	xOdomNow = GetOdometry(k)
 	u = tcomp(tinv(xOdomLast), xOdomNow)
 	xOdomLast = np.copy(xOdomNow)
@@ -315,7 +278,7 @@ while(RunSim):
 	(z, iFeature) = GetObservation(k)
 
 	if iFeature != -1:
-
+		# UPDATE
 		zPred = doObservationModel(XPred, iFeature, Map)
 		jH = GetObsJac(XPred, iFeature, Map)
 
