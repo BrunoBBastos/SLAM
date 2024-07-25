@@ -9,7 +9,7 @@ import simplejson as json
 # parâmetros do robô
 RAIO_RODA = 31.75/1000 
 BASE_RODAS = 120 / 1000 # distância entre rodas
-RPM = 100 # rotações por minutos do motor, estão descalibradas
+RPM = 100 # rotações por minuto do motor, estão descalibrados
 # velocidade linear máxima das rodas
 MAX_VEL = RPM/60 * 2 * np.pi * RAIO_RODA
 # correção por causa da diferença de velocidade dos motores
@@ -24,13 +24,6 @@ topics_subscribe = [
 					]
 
 #---------- BEGIN MQTT ----------#
-# def on_connect(client, userdata, flags, reason_code, properties):
-#     if reason_code == 0:
-#         print("Connected to MQTT broker with "+str(reason_code))
-#         connection_status = True
-#         client.subscribe(state_topic)
-#     else:
-#         print("Failed to connect to MQTT broker with "+str(reason_code))
 
 def on_connect(client, userdata, flags, reason_code, properties):
 	global topics_subscribe
@@ -38,9 +31,6 @@ def on_connect(client, userdata, flags, reason_code, properties):
 		print("Connection to MQTT broker: "+ str(reason_code))
 		for topic in topics_subscribe:
 			client.subscribe(topic)
-		# client.subscribe("robot/odometria")
-		# client.subscribe("robot/observation")
-		# client.subscribe("controle/stop")
 	else:
 		print("Failed to Connect to MQTT broker "+ str(reason_code))
 
@@ -51,13 +41,18 @@ def on_message(client, userdata, msg):
 		odomstr = str(msg.payload.decode())
 		odomstr = json.loads(odomstr)
 		odomvalues = odomstr["odometria"].split(', ')
-		odomMQTT = (np.array([[odomvalues[0]], [odomvalues[1]], [odomvalues[2]]], dtype = 'float32'))
+		odomMQTT = (np.array([[odomvalues[0]],
+						      [odomvalues[1]],
+							  [odomvalues[2]]],
+							  dtype = 'float32'))
 		newOdom = True
 
 	elif (msg.topic == "robot/observation"):
 		obsstr = str(msg.payload.decode())
 		obsstr = json.loads(obsstr)
-		obsMQTT = np.array([[obsstr["r"]], [obsstr["theta"]], [obsstr["label"]]])
+		obsMQTT = np.array([[obsstr["r"]],
+					        [obsstr["theta"]],
+							[obsstr["label"]]])
 
 	elif (msg.topic == "controle/stop"):
 			RunSim = False
@@ -113,9 +108,11 @@ def main():
 if __name__ == '__main__':
 
     # ------- CONFIG GAMEPAD -------
-    # Leitura dos dispositivos usb, rodar uma vez pra descobrir o código que vai no gamepad.open()
+    # Leitura dos dispositivos usb, rodar uma vez pra descobrir
+    # o código que vai no gamepad.open()
     # for device in hid.enumerate():
-    #     print(f"0x{device['vendor_id']:04x}:0x{device['product_id']:04x} {device['product_string']}")
+    #     print(f"0x{device['vendor_id']:04x}:0x{device['product_id']:04x}
+    #               {device['product_string']}")
 	# while True:
         # pass
 
@@ -139,8 +136,6 @@ if __name__ == '__main__':
 	# conectar ao broker
     client.connect(mqtt_broker, mqtt_port)
     client.loop_start()
-    state_topic = "robot/state"
-    # topic = 'slam/ref'
     topic_pub_vel = 'slam/ref'
     # --------- CONFIG MQTT --------
 
