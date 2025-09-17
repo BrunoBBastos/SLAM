@@ -11,6 +11,7 @@
 #include "esp_event.h"
 #include "esp_log.h"
 #include "esp_mac.h"
+#include "esp_netif_ip_addr.h"
 
 #include "lwip/err.h"
 #include "lwip/sys.h"
@@ -42,14 +43,14 @@ wifi_cred_t wifi_cred_list[] = {
 #define EXAMPLE_ESP_MAXIMUM_RETRY   CONFIG_ESP_MAXIMUM_RETRY
 
 // Definição dos bits para o grupo de eventos (BIT0 e BIT1 já são macros, não precisamos realizar deslocamento de bits)
-#define WIFI_CONNECTED_BIT  BIT0
-#define WIFI_FAIL_BIT       BIT1
+// #define WIFI_CONNECTED_BIT  BIT0
+// #define WIFI_FAIL_BIT       BIT1
 
 // TAG para info
 static const char *TAG = "Wi-Fi";
 
 //Sincronizar as tarefas conforme os eventos WiFi ocorrem
-static EventGroupHandle_t s_wifi_event_group;
+// static EventGroupHandle_t s_wifi_event_group;
 
 static EventGroupHandle_t s_wifi_evgrp = NULL;
 #define BIT_WIFI_STARTED      (1 << 0)
@@ -60,8 +61,9 @@ static EventGroupHandle_t s_wifi_evgrp = NULL;
 
 // Estado e variáveis
 static int s_retry_num = 0; // Quantidade de tentativas para conexão
-static bool reconnect = false; // Para tentativas de reconexão
-static esp_netif_t *esp_netif; // *s_esp_netif = NULL;
+static bool s_reconnect = false; // Para tentativas de reconexão
+static bool s_wifi_inited = false;
+static esp_netif_t *s_esp_netif = NULL; // *s_esp_netif = NULL;
 
 // Motivo da desconexão
 char *get_wifi_disconnection_string(wifi_err_reason_t wifi_err_reason)
@@ -132,106 +134,191 @@ char *get_wifi_disconnection_string(wifi_err_reason_t wifi_err_reason)
     return "UNKNOWN";
 }
 
-static void wifi_event_handler(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data)
-{
-    if (event_base == WIFI_EVENT) {
-        if (event_id == WIFI_EVENT_STA_START) {
-            ESP_LOGI(TAG, "WIFI_EVENT_STA_START -> iniciar SCAN assíncrono");
-            wifi_scan_config_t scan_config = {0};
-            // non-blocking: retorna rapidamente, scan_done será gerado
-            esp_err_t err = esp_wifi_scan_start(&scan_config, false);
+static void wifi_event_handler(void * arg, esp_event_base_t event_base, int32_t event_id, void *event_data){
+
+    if(event_base == WIFI_EVENT){
+        switch(event_id){
+            case WIFI_EVENT_STA_START:
+                xEventGroupSetBits(s_wifi_evgrp, BIT_WIFI_STARTED);
+                ESP_LOGI(TAG, "EVENT: STA_START");
+                break;
+            case WIFI_EVENT_SCAN_DONE:
+                xEventGroupSetBits(s_wifi_evgrp, BIT_WIFI_SCAN_DONE);
+                ESP_LOGI(TAG, "EVENT: SCAN_DONE");
+                break;
+            case WIFI_EVENT_STA_DISCONNECTED: {
+                wifi_event_sta_disconnected_t *ev = (wifi_event_sta_disconnected_t *) event_data;
+                ESP_LOGW(TAG, "EVENT: STA_DISCONNECTED, reason=%d (%s)", ev->reason, get_wifi_disconnection_string(ev->reason));
+                xEventGroupSetBits(s_wifi_evgrp, BIT_WIFI_DISCONNECTED);
+                break;
+            }
+            default:
+                // ESP_LOGI(TAG, "EVENT: %d", event_id);
+                break;
+        }
+    } else if(event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP){
+        ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
+        ESP_LOGI(TAG, "EVENT: GOT_IP: " IPSTR, IP2STR(&event->ip_info.ip));
+        s_retry_num = 0;
+        xEventGroupSetBits(s_wifi_evgrp, BIT_WIFI_CONNECTED);
+    }
+}
+
+static bool select_best_ap(wifi_ap_record_t *ap_records, uint16_t ap_num, wifi_config_t *out_config){
+    int strongest_idx = -1;
+    int strongest_rssi = -127;
+    for(int i = 0; i < ap_num; i++){
+        for(int j = 0; j < WIFI_CRED_LIST_SIZE; j++){
+            if(strncmp((char *)ap_records[i].ssid, wifi_cred_list[j].ssid, sizeof(ap_records[i].ssid)) == 0){
+                if(ap_records[i].rssi > strongest_rssi){
+                    strongest_rssi = ap_records[i].rssi;
+                    strongest_idx = j;
+                }
+            }
+        }
+    }
+    if(strongest_idx < 0){
+        return false;
+    }
+
+    memset(out_config, 0, sizeof(wifi_config_t));
+    strncpy((char *)out_config->sta.ssid, wifi_cred_list[strongest_idx].ssid, sizeof(out_config->sta.ssid)-1);
+    strncpy((char *)out_config->sta.password, wifi_cred_list[strongest_idx].password, sizeof(out_config->sta.password)-1);
+    out_config->sta.threshold.authmode = WIFI_AUTH_WPA2_PSK;
+    out_config->sta.pmf_cfg.capable = true;
+    out_config->sta.pmf_cfg.required = false;
+    ESP_LOGI(TAG, "Escolhido SSID %s (RSSI %d)", wifi_cred_list[strongest_idx].ssid, strongest_rssi);
+    return true;
+}
+
+static void wifi_manager_task(void *pvParameters){
+    esp_err_t err;
+    wifi_config_t wifi_config;
+
+    for(;;){
+        // Espera o driver iniciar
+        EventBits_t bits = xEventGroupWaitBits(s_wifi_evgrp, BIT_WIFI_STARTED, pdFALSE, pdFALSE, portMAX_DELAY);
+        if(!(bits & BIT_WIFI_STARTED)) continue;
+
+        /*
+        LOOP:
+        scan
+        seleciona ap
+        conecta
+        espera evento
+        */
+        while(1){
+            // iniciar scan não-bloqueante (driver que gera WIFI_EVENT_SCAN_DONE)
+            wifi_scan_config_t scan_cfg = {0};
+            err = esp_wifi_scan_start(&scan_cfg, false);
             if (err != ESP_OK) {
-                ESP_LOGE(TAG, "esp_wifi_scan_start falhou: %s", esp_err_to_name(err));
+                ESP_LOGE(TAG, "esp_wifi_scan_start failed: %s", esp_err_to_name(err));
+                vTaskDelay(pdMS_TO_TICKS(2000));
+                continue;
             }
-        } else if (event_id == WIFI_EVENT_SCAN_DONE) {
+            // aguardar SCAN_DONE com timeout
+            bits = xEventGroupWaitBits(s_wifi_evgrp, BIT_WIFI_SCAN_DONE, pdTRUE, pdFALSE, pdMS_TO_TICKS(WIFI_MANAGER_TIMEOUT_MS));
+            if (!(bits & BIT_WIFI_SCAN_DONE)) {
+                ESP_LOGW(TAG, "Scan timeout/failed");
+                vTaskDelay(pdMS_TO_TICKS(1000));
+                continue;
+            }
+            // obter lista de APs (alocar na heap)
             uint16_t ap_num = 0;
-            esp_err_t err = esp_wifi_scan_get_ap_num(&ap_num);
+            err = esp_wifi_scan_get_ap_num(&ap_num);
             if (err != ESP_OK || ap_num == 0) {
-                ESP_LOGW(TAG, "nenhum AP encontrado ou erro: %s", esp_err_to_name(err));
-                return;
+                ESP_LOGW(TAG, "Nenhum AP encontrado ou erro: %s", esp_err_to_name(err));
+                vTaskDelay(pdMS_TO_TICKS(1000));
+                continue;
             }
-            // aloca no heap, não na pilha
-            wifi_ap_record_t *ap_records = malloc(sizeof(wifi_ap_record_t) * ap_num);
+            wifi_ap_record_t *ap_records = calloc(ap_num, sizeof(wifi_ap_record_t));
             if (!ap_records) {
-                ESP_LOGE(TAG, "malloc AP records falhou");
-                return;
+                ESP_LOGE(TAG, "calloc falhou para ap_records");
+                vTaskDelay(pdMS_TO_TICKS(1000));
+                continue;
             }
             err = esp_wifi_scan_get_ap_records(&ap_num, ap_records);
             if (err != ESP_OK) {
                 ESP_LOGE(TAG, "esp_wifi_scan_get_ap_records falhou: %s", esp_err_to_name(err));
                 free(ap_records);
-                return;
+                vTaskDelay(pdMS_TO_TICKS(1000));
+                continue;
             }
 
-            // Processar ap_records (escolher melhor known SSID)
-            int strongest_idx = -1;
-            int strongest_rssi = -127;
-            for (int i = 0; i < ap_num; ++i) {
-                for (int j = 0; j < WIFI_CRED_LIST_SIZE; ++j) {
-                    if (strcmp((char*)ap_records[i].ssid, wifi_cred_list[j].ssid) == 0) {
-                        if (ap_records[i].rssi > strongest_rssi) {
-                            strongest_rssi = ap_records[i].rssi;
-                            strongest_idx = j;
-                        }
-                    }
-                }
+            // selecionar melhor AP conhecido
+            bool found = select_best_ap(ap_records, ap_num, &wifi_config);
+            free(ap_records);
+
+            if (!found) {
+                ESP_LOGW(TAG, "Nenhuma rede conhecida detectada no scan. Retry em 2s.");
+                vTaskDelay(pdMS_TO_TICKS(2000));
+                continue;
             }
 
-            if (strongest_idx >= 0) {
-                wifi_config_t wifi_config = {0};
-                strncpy((char*)wifi_config.sta.ssid, wifi_cred_list[strongest_idx].ssid, sizeof(wifi_config.sta.ssid)-1);
-                strncpy((char*)wifi_config.sta.password, wifi_cred_list[strongest_idx].password, sizeof(wifi_config.sta.password)-1);
-                wifi_config.sta.threshold.authmode = WIFI_AUTH_WPA2_PSK;
+            // aplicar config e conectar
+            ESP_LOGI(TAG, "Setando config e conectando...");
+            err = esp_wifi_set_config(WIFI_IF_STA, &wifi_config);
+            if (err != ESP_OK) {
+                ESP_LOGE(TAG, "esp_wifi_set_config falhou: %s", esp_err_to_name(err));
+                vTaskDelay(pdMS_TO_TICKS(1000));
+                continue;
+            }
 
-                // Fazer conexão: NÃO chame esp_wifi_start() aqui (já startado); chame esp_wifi_set_config + esp_wifi_connect
-                ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
-                ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
-                esp_err_t errc = esp_wifi_connect();
-                if (errc != ESP_OK) {
-                    ESP_LOGE(TAG, "esp_wifi_connect falhou: %s", esp_err_to_name(errc));
+            err = esp_wifi_connect();
+            if (err != ESP_OK) {
+                ESP_LOGE(TAG, "esp_wifi_connect falhou: %s", esp_err_to_name(err));
+                vTaskDelay(pdMS_TO_TICKS(1000));
+                continue;
+            }
+
+            // aguardar resultado (IP ou DISCONNECT)
+            bits = xEventGroupWaitBits(s_wifi_evgrp, BIT_WIFI_CONNECTED | BIT_WIFI_DISCONNECTED, pdTRUE, pdFALSE, pdMS_TO_TICKS(WIFI_MANAGER_CONNECT_WAIT_MS));
+            if (bits & BIT_WIFI_CONNECTED) {
+                ESP_LOGI(TAG, "Conectado com sucesso!");
+                // permanência: task pode encerrar ciclo de tentativa ou ficar verificando desconexões
+                // Espera desconexão para tentar reconectar
+                xEventGroupWaitBits(s_wifi_evgrp, BIT_WIFI_DISCONNECTED, pdTRUE, pdFALSE, portMAX_DELAY);
+                ESP_LOGW(TAG, "Detectada desconexão, tentando reconectar...");
+                // loop volta e fará novo scan/seleção
+            } else if (bits & BIT_WIFI_DISCONNECTED) {
+                ESP_LOGW(TAG, "Não conseguiu conectar (DISCONNECTED bit). Tentando novamente...");
+                s_retry_num++;
+                if (s_retry_num >= WIFI_MANAGER_MAX_RETRY) {
+                    ESP_LOGE(TAG, "Ultrapassou tentativas (%d). Pausando 5s.", s_retry_num);
+                    s_retry_num = 0;
+                    vTaskDelay(pdMS_TO_TICKS(5000));
                 }
             } else {
-                ESP_LOGW(TAG, "Nenhuma rede conhecida detectada no scan");
+                ESP_LOGW(TAG, "Timeout esperando conexão. Retry.");
+                vTaskDelay(pdMS_TO_TICKS(1000));
             }
+        } // WHILE
+    } // FOR
+}
 
-            free(ap_records);
-        } else if (event_id == WIFI_EVENT_STA_DISCONNECTED) {
-            // Estrutura para o evento da desconexão no modo station
-            wifi_event_sta_disconnected_t *wifi_event_sta_disconnected = event_data;
+// API pública e init
+void wifi_init(void){
 
-            // Visualizando o motivo da desconexão
-            ESP_LOGW(TAG, "Motivo da Desconexão %d: %s", wifi_event_sta_disconnected->reason, get_wifi_disconnection_string(wifi_event_sta_disconnected->reason));
-            
-            if(reconnect){
-                /*  
-                    Tentar novamente conexão se o motivo for:
-                    if(wifi_event_sta_disconnected->reason == WIFI_REASON_NO_AP_FOUND ||
-                    wifi_event_sta_disconnected->reason == WIFI_REASON_ASSOC_LEAVE ||
-                    wifi_event_sta_disconnected->reason == WIFI_REASON_AUTH_EXPIRE){
-                */
+    if(s_wifi_inited) return;
+    s_wifi_inited = true;
 
-                // Tentando reconectar
-                if(s_retry_num < EXAMPLE_ESP_MAXIMUM_RETRY){
-                    esp_wifi_connect();
-                    s_retry_num++;
-                    ESP_LOGI(TAG, "Tentando se conectar %d", s_retry_num);
-                }else{
-                    // Caso não consiga conexão indica ao grupo de eventos
-                    ESP_LOGI(TAG, "Falha na conexão");
-                    xEventGroupSetBits(s_wifi_event_group, WIFI_FAIL_BIT);
-                }
-            }
-        }
-    } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
-        // Verificando se o evento é referente ao IP
-        ip_event_got_ip_t* event = (ip_event_got_ip_t*)event_data;
-        ESP_LOGI(TAG, "Pegamos um IP " IPSTR, IP2STR(&event->ip_info.ip));
+    // init subsystems
+    ESP_ERROR_CHECK(esp_netif_init());
+    ESP_ERROR_CHECK(esp_event_loop_create_default());
+    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+    ESP_ERROR_CHECK(esp_wifi_init(&cfg));
 
-        s_retry_num = 0;
+    // set storage (opcional)
+    ESP_ERROR_CHECK(esp_wifi_set_storage(WIFI_STORAGE_RAM));
 
-        //Depois de ter conseguido IP a conexão foi realizada com sucesso. Indica ao grupo de eventos
-        xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
+    // criar event group
+    if (!s_wifi_evgrp) {
+        s_wifi_evgrp = xEventGroupCreate();
     }
+
+    // registrar handler (usando instância para poder desregistrar se quiser)
+    ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &wifi_event_handler, NULL, NULL));
+    ESP_ERROR_CHECK(esp_event_handler_instance_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &wifi_event_handler, NULL, NULL));
 }
 
 static void ap_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data){
@@ -252,7 +339,7 @@ static bool wifi_scan_and_select_ap(wifi_config_t *wifi_config)
     uint16_t ap_num = 0;
 
     ESP_LOGI(TAG, "Iniciando scan de redes...");
-    esp_err_t err = esp_wifi_scan_start(&scan_config, false); // true bloqueia até o scan completar
+    esp_err_t err = esp_wifi_scan_start(&scan_config, true); // true bloqueia até o scan completar
     if(err != ESP_OK){
         ESP_LOGE(TAG, "Scan deu ruim: %s", esp_err_to_name(err));
         return false;
@@ -264,8 +351,12 @@ static bool wifi_scan_and_select_ap(wifi_config_t *wifi_config)
         return false;
     }
 
-    wifi_ap_record_t ap_records[ap_num];
-    ESP_ERROR_CHECK(esp_wifi_scan_get_ap_records(&ap_num, ap_records));
+    wifi_ap_record_t *ap_records = calloc(ap_num, sizeof(wifi_ap_record_t));
+    if(!ap_records){
+        ESP_LOGE(TAG, "calloc falhou para ap_records");
+        return false;
+    }
+    err = esp_wifi_scan_get_ap_records(&ap_num, ap_records);
 
     int strongest_idx = -1;
     int strongest_rssi = -127;
@@ -279,6 +370,8 @@ static bool wifi_scan_and_select_ap(wifi_config_t *wifi_config)
             }
         }
     }
+
+    free(ap_records);
 
     if(strongest_idx < 0){
         ESP_LOGE(TAG, "Nenhuma rede conhecida encontrada");
@@ -301,75 +394,38 @@ static bool wifi_scan_and_select_ap(wifi_config_t *wifi_config)
     return true;
 }
 
-// Função auxiliar: conecta com a config escolhida
-static void wifi_connect_sta(wifi_config_t *wifi_config){
-    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
-    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, wifi_config));
-    // ESP_ERROR_CHECK(esp_wifi_start());
-
-    esp_err_t err = esp_wifi_connect();
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "esp_wifi_connect falhou: %s", esp_err_to_name(err));
-    }
-
-    ESP_LOGI(TAG, "Wifi configurado, aguardando eventos...");
-
-    EventBits_t bits = xEventGroupWaitBits(
-        s_wifi_event_group,
-        WIFI_CONNECTED_BIT | WIFI_FAIL_BIT,
-        pdFALSE,
-        pdFALSE,
-        portMAX_DELAY);
-    
-    if(bits & WIFI_CONNECTED_BIT){
-        ESP_LOGI(TAG, "Conectado ao AP SSID: %s password: %s",
-            wifi_config->sta.ssid, wifi_config->sta.password);
-    }
-    else if(bits & WIFI_FAIL_BIT){
-        ESP_LOGE(TAG, "Falha ao se conectar na %s",
-            wifi_config->sta.ssid);
-    }
-    else {
-        ESP_LOGE(TAG, "Evento inesperado");
-    }
-}
-
-void wifi_init(){
-
-    // Init Phase - Wi-Fi Driver and LwIP
-    ESP_ERROR_CHECK(esp_netif_init());                       // LwIP
-    ESP_ERROR_CHECK(esp_event_loop_create_default());        // Event loop for event task   
-    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();     // Driver Wi-Fi
-    ESP_ERROR_CHECK(esp_wifi_init(&cfg));
-
-    // Manipulador de eventos WiFi
-    ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &wifi_event_handler, NULL));
-    ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &wifi_event_handler, NULL));
-
-    // Realizando o storage na RAM. Deixa a conexão um pouco mais rápida.
-    // É uma outra forma de configurar, ao invés de modo persistente na NVS.
-    // Obs: Perdendo a conexão é preciso realizar a configurações novamente (executa essa mesma rotina).
-    ESP_ERROR_CHECK(esp_wifi_set_storage(WIFI_STORAGE_RAM));
-}
-
 void wifi_init_sta(void){
 
     wifi_init();
-    reconnect = true;
-        
-    s_wifi_event_group = xEventGroupCreate(); 
-    esp_netif = esp_netif_create_default_wifi_sta();    // Cria LwIP para config station
+
+    s_reconnect = true;
+    s_retry_num = 0;
+    
+    // Cria LwIP para config station
+    if(s_esp_netif == NULL){
+        s_esp_netif = esp_netif_create_default_wifi_sta(); 
+        if(!s_esp_netif){
+            ESP_LOGE(TAG, "esp_netif_create_default_wifi_sta falhou");
+            return;
+        }
+    }
 
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
     ESP_ERROR_CHECK(esp_wifi_start());
 
-    wifi_config_t wifi_config;
-    if(!wifi_scan_and_select_ap(&wifi_config)){
-        ESP_LOGE(TAG, "Scan não encontrou porra nenhuma");
-        return;
+    BaseType_t res = xTaskCreatePinnedToCore(
+        wifi_manager_task,
+        "wifi_manager_task",
+        WIFI_MANAGER_TASK_STACK_SIZE,
+        NULL,
+        WIFI_MANAGER_TASK_PRIORITY,
+        NULL,
+        tskNO_AFFINITY);
+    if(res != pdPASS){
+        ESP_LOGE(TAG, "Falha ao criar a task do Wi-Fi Manager");
+    } else {
+        ESP_LOGI(TAG, "Task do Wi-Fi Manager criada com sucesso");
     }
-
-    wifi_connect_sta(&wifi_config);
 }
 
 void wifi_init_ap(const char *ssid, const char *pass){
@@ -377,12 +433,9 @@ void wifi_init_ap(const char *ssid, const char *pass){
     // Função de configuração
     wifi_init();
     ESP_LOGI(TAG, "INICIALIZANDO O WI-FI!");
-    esp_netif = esp_netif_create_default_wifi_ap();     // LwIP com configurações básicas para o modo AP.
+    s_esp_netif = esp_netif_create_default_wifi_ap();     // LwIP com configurações básicas para o modo AP.
 
-    // Wi-Fi Configuration Phase
-    ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &ap_event_handler, NULL, NULL));
-    
-    wifi_config_t wifi_config = {};
+    wifi_config_t wifi_config = {0};
     strncpy((char *)wifi_config.ap.ssid, ssid, sizeof(wifi_config.ap.ssid) - 1);
     strncpy((char *)wifi_config.ap.password, pass, sizeof(wifi_config.ap.password) - 1);
     wifi_config.ap.authmode = WIFI_AUTH_WPA_WPA2_PSK;
@@ -394,14 +447,14 @@ void wifi_init_ap(const char *ssid, const char *pass){
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &wifi_config));
 
     // Wi-Fi start Phase
-    esp_wifi_start();
+    ESP_ERROR_CHECK(esp_wifi_start());
 
     ESP_LOGI(TAG, "ESP32 COMO AP PRONTO! CONECTAR AO SSID: %s, PASSWORD: %s E CANAL: %d", 
             wifi_config.ap.ssid, wifi_config.ap.password, wifi_config.ap.channel);
 }
 
 void wifi_disconnect(){
-    reconnect = false;
-    esp_wifi_stop();
-    esp_netif_destroy(esp_netif);
+    s_reconnect = false;
+    esp_wifi_disconnect();
+    ESP_LOGI(TAG, "Solicitado desconexão do wifi");
 }

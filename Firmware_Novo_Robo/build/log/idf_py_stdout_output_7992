@@ -1,6 +1,0 @@
--- ccache will be used for faster recompilation
--- Could not use 'git describe' to determine PROJECT_VER.
--- Building ESP-IDF components for target esp32s3
--- Project sdkconfig file C:/Users/brbzb/OneDrive/Área de Trabalho/SLAM/GITHUB/SLAM/Firmware_Novo_Robo/sdkconfig
--- Configuring incomplete, errors occurred!
-See also "C:/Users/brbzb/OneDrive/Área de Trabalho/SLAM/GITHUB/SLAM/Firmware_Novo_Robo/build/CMakeFiles/CMakeOutput.log".

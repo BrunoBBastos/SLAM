@@ -1,0 +1,13 @@
+# Target labels
+ bootloader
+# Source files and their labels
+C:/GITHUB/SLAM/Firmware_Novo_Robo/build/CMakeFiles/bootloader
+C:/GITHUB/SLAM/Firmware_Novo_Robo/build/CMakeFiles/bootloader.rule
+C:/GITHUB/SLAM/Firmware_Novo_Robo/build/CMakeFiles/bootloader-complete.rule
+C:/GITHUB/SLAM/Firmware_Novo_Robo/build/bootloader-prefix/src/bootloader-stamp/bootloader-build.rule
+C:/GITHUB/SLAM/Firmware_Novo_Robo/build/bootloader-prefix/src/bootloader-stamp/bootloader-configure.rule
+C:/GITHUB/SLAM/Firmware_Novo_Robo/build/bootloader-prefix/src/bootloader-stamp/bootloader-download.rule
+C:/GITHUB/SLAM/Firmware_Novo_Robo/build/bootloader-prefix/src/bootloader-stamp/bootloader-install.rule
+C:/GITHUB/SLAM/Firmware_Novo_Robo/build/bootloader-prefix/src/bootloader-stamp/bootloader-mkdir.rule
+C:/GITHUB/SLAM/Firmware_Novo_Robo/build/bootloader-prefix/src/bootloader-stamp/bootloader-patch.rule
+C:/GITHUB/SLAM/Firmware_Novo_Robo/build/bootloader-prefix/src/bootloader-stamp/bootloader-update.rule
