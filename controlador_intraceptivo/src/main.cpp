@@ -265,7 +265,7 @@ void ouvirSerial()
       {
         switch(modo)
         {
-          // É necessário fazer a limpeza das variáveis relevantes ao trocar de modo
+// É necessário fazer a limpeza das variáveis relevantes ao trocar de modo
           case PWM:
           {
             modo_operacao = modo;
@@ -302,7 +302,7 @@ void acionarMotores(int pwmE, int pwmD)
 
 void acionar(int pwm, int MA, int MB)
 {
-  if (pwm > 0)
+  if (pwm >= 0)
   {
     analogWrite(MA, pwm);
     digitalWrite(MB, 0);
@@ -403,7 +403,7 @@ void loop()
   {
     float vE, vD;
     odometria(vE, vD);
-    // printVelocidades(vE, vD);
+    printVelocidades(vE, vD);
     printOdometria();
     tLastOdom = t;
 
@@ -414,10 +414,7 @@ void loop()
         float aE = ControlePID_atualizar(&pidEsquerdo, velLeftSetpoint, vE);
         float aD = ControlePID_atualizar(&pidDireito, velRightSetpoint, vD);
 
-        // pwmEsq += aE; //orig
-        // pwmEsq = constrain(pwmEsq, -255, 255); //orig
-        pwmEsq = constrain(aE, -255, 255); //fake
-        // pwmDir = aD;
+        pwmEsq = constrain(aE, -255, 255);
         pwmDir = constrain(aD, -255, 255);
         acionarMotores((int)pwmEsq, (int)pwmDir);
 
@@ -442,8 +439,9 @@ void loop()
 
 void printVelocidades(float vE, float vD)
 {
+  Serial.print("V ");
   Serial.print(vE, 6);
-  Serial.print('\t');
+  Serial.print(" ");
   Serial.println(vD, 6);
 }
 
