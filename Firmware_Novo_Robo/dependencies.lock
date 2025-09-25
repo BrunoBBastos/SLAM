@@ -1,0 +1,51 @@
+dependencies:
+  espp/base_component:
+    component_hash: 20c5842506d7f704fc1383988ef13cae68d3bcb31a1a1a5b051d1e23c1316858
+    source:
+      service_url: https://api.components.espressif.com/
+      type: service
+    version: 1.0.24
+  espp/color:
+    component_hash: a86ba5b92b39b31753dda2deaf19e7128cc903fac23356895043a8311da0295c
+    source:
+      service_url: https://api.components.espressif.com/
+      type: service
+    version: 1.0.24
+  espp/format:
+    component_hash: 7f1872001c9496b561491e439f9e300710042ca1fb70dec9669876c7e2f6a272
+    source:
+      service_url: https://api.components.espressif.com/
+      type: service
+    version: 1.0.24
+  espp/logger:
+    component_hash: a79aac3e73d88f23a1f8480f1d999de323c68628c6c0f07922de4fcf27213b43
+    source:
+      service_url: https://api.components.espressif.com/
+      type: service
+    version: 1.0.24
+  espp/neopixel:
+    component_hash: 4c024e2d6e10769de10881ef5c42aaa092e0da15a8fcb0528bb40df21d01eb97
+    source:
+      service_url: https://api.components.espressif.com/
+      type: service
+    version: 1.0.24
+  espp/rmt:
+    component_hash: bdfde372e79d291e2936c2afc967c79afe2da327f3b00e6a49d26c7a5d2aecd8
+    source:
+      service_url: https://api.components.espressif.com/
+      type: service
+    version: 1.0.24
+  espressif/led_strip:
+    component_hash: 28c6509a727ef74925b372ed404772aeedf11cce10b78c3f69b3c66799095e2d
+    source:
+      service_url: https://api.components.espressif.com/
+      type: service
+    version: 2.5.5
+  idf:
+    component_hash: null
+    source:
+      type: idf
+    version: 5.2.1
+manifest_hash: 2f865ca453ee99ffd2544b23c4c6f3e3edb55e77e555e6276c50c5b3e20b04bc
+target: esp32s3
+version: 1.0.0

@@ -8,6 +8,6 @@ void mqtt_publish(char *topic, char *payload, int qos, int retain);
 int mqtt_connected(void);
 void mqtt_disconect(void);
 void mqtt_reconnect(void);
-
+void mqtt_stop(void);
 
 #endif

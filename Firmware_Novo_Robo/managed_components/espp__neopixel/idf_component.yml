@@ -1,0 +1,22 @@
+dependencies:
+  espp/base_component: '>=1.0'
+  espp/color: '>=1.0'
+  espp/rmt: '>=1.0'
+  idf:
+    version: '>=5.0'
+description: Neopixel component for ESP-IDF
+documentation: https://esp-cpp.github.io/espp/neopixel.html
+license: MIT
+maintainers:
+- William Emfinger <waemfinger@gmail.com>
+repository: git://github.com/esp-cpp/espp.git
+repository_info:
+  commit_sha: d1d5a8b0b316c32e0b40106fb237c251048896fa
+  path: components/neopixel
+tags:
+- cpp
+- Component
+- Neopixel
+- LED
+url: https://github.com/esp-cpp/espp/tree/main/components/neopixel
+version: 1.0.24

@@ -29,13 +29,17 @@ static void mqtt_event_handler(void *event_handler_arg, esp_event_base_t event_b
     switch ((esp_mqtt_event_id_t)event_id){
     case MQTT_EVENT_CONNECTED:
         ESP_LOGI(TAG, "MQTT_EVENT_CONNECTED");
-        xEventGroupSetBits(status_mqtt_event_group, MQTT_CONNECTED);
+        if(status_mqtt_event_group!=NULL){
+            xEventGroupSetBits(status_mqtt_event_group, MQTT_CONNECTED);
+        }
         mqtt_publish("SLAM/robot2/status", "Online", 1, 0);
         mqtt_subscribe("SLAM/vel/#", 0);
         break;
     case MQTT_EVENT_DISCONNECTED:
         ESP_LOGW(TAG, "MQTT_EVENT_DISCONNECTED");
-        xEventGroupClearBits(status_mqtt_event_group, MQTT_CONNECTED);
+        if(status_mqtt_event_group!=NULL){
+            xEventGroupClearBits(status_mqtt_event_group, MQTT_CONNECTED);
+        }
         break;
     case MQTT_EVENT_SUBSCRIBED:
         ESP_LOGI(TAG, "MQTT_EVENT_SUBSCRIBED from msg_id = %d", event->msg_id);
@@ -120,7 +124,9 @@ static void mqtt_event_handler(void *event_handler_arg, esp_event_base_t event_b
 
 void mqtt_start(void){
 
-    status_mqtt_event_group = xEventGroupCreate();
+    if(status_mqtt_event_group == NULL){
+        status_mqtt_event_group = xEventGroupCreate();
+    }
     //Configuração da estrutura do cliente MQTT
     esp_mqtt_client_config_t esp_mqtt_client_cfg = {
         .network.disable_auto_reconnect = false,                    // Habilitar reconexão 
@@ -163,17 +169,19 @@ void mqtt_publish(char *topic, char *payload, int qos, int retain){
 }
 
 int mqtt_connected(void){
+    if(status_mqtt_event_group == NULL) return 0;
     EventBits_t bits = xEventGroupGetBits(status_mqtt_event_group);
-
-    if(bits & MQTT_CONNECTED){
-        return 1;
-    }else {
-        return 0;
-    }
+    return (bits&MQTT_CONNECTED);
 }
 
-// void mqtt_reconnect(void)
-// {
-//     esp_mqtt_client_stop(client);
-//     esp_mqtt_client_reconnect(client);
-// }
+void mqtt_stop(void){
+    if(client){
+        esp_mqtt_client_stop(client);
+        esp_mqtt_client_destroy(client);
+        client = NULL;
+    }
+    if (status_mqtt_event_group != NULL) {
+        vEventGroupDelete(status_mqtt_event_group);
+        status_mqtt_event_group = NULL;
+    }
+}

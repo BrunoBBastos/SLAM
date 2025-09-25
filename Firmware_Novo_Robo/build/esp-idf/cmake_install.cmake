@@ -419,6 +419,41 @@ endif()
 
 if(NOT CMAKE_INSTALL_LOCAL_ONLY)
   # Include the install script for the subdirectory.
+  include("C:/GITHUB/SLAM/Firmware_Novo_Robo/build/esp-idf/espp__format/cmake_install.cmake")
+endif()
+
+if(NOT CMAKE_INSTALL_LOCAL_ONLY)
+  # Include the install script for the subdirectory.
+  include("C:/GITHUB/SLAM/Firmware_Novo_Robo/build/esp-idf/espp__logger/cmake_install.cmake")
+endif()
+
+if(NOT CMAKE_INSTALL_LOCAL_ONLY)
+  # Include the install script for the subdirectory.
+  include("C:/GITHUB/SLAM/Firmware_Novo_Robo/build/esp-idf/espp__base_component/cmake_install.cmake")
+endif()
+
+if(NOT CMAKE_INSTALL_LOCAL_ONLY)
+  # Include the install script for the subdirectory.
+  include("C:/GITHUB/SLAM/Firmware_Novo_Robo/build/esp-idf/espp__color/cmake_install.cmake")
+endif()
+
+if(NOT CMAKE_INSTALL_LOCAL_ONLY)
+  # Include the install script for the subdirectory.
+  include("C:/GITHUB/SLAM/Firmware_Novo_Robo/build/esp-idf/espp__rmt/cmake_install.cmake")
+endif()
+
+if(NOT CMAKE_INSTALL_LOCAL_ONLY)
+  # Include the install script for the subdirectory.
+  include("C:/GITHUB/SLAM/Firmware_Novo_Robo/build/esp-idf/espp__neopixel/cmake_install.cmake")
+endif()
+
+if(NOT CMAKE_INSTALL_LOCAL_ONLY)
+  # Include the install script for the subdirectory.
+  include("C:/GITHUB/SLAM/Firmware_Novo_Robo/build/esp-idf/espressif__led_strip/cmake_install.cmake")
+endif()
+
+if(NOT CMAKE_INSTALL_LOCAL_ONLY)
+  # Include the install script for the subdirectory.
   include("C:/GITHUB/SLAM/Firmware_Novo_Robo/build/esp-idf/main/cmake_install.cmake")
 endif()
 

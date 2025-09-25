@@ -1,3 +1,35 @@
+/*
+* Projeto: Robô plataforma de ensino de robótica móvel
+* Autor: Bruno Bezerra Bastos
+* Data: 09/2025
+* Descrição: Controle de velocidade dos motores, odometria e comunicação MQTT
+**** UPGRADES FUTUROS: (Px = prioridade x)
+******* GLOBAIS
+*       - Refatorar wifi.c e disponibilizar event groups (P4)
+*       - Aplicar paradigma FreeRTOS ao Módulo de Controle (P3)
+*       - Configuração dinâmica de parâmetros de PID, vmax, timeout, modo, etc (P3)
+*       - Adição de LEDs (P3)
+*       - Estruturar telemetria MQTT: timestamp, seq, etc (P2)
+*       - Adição de botão (P2)
+*       - Ownership e admin override no mqtt (P1)
+*       - Adotar o padrão MISRA C
+*
+*
+******* LOCAIS
+*       - Implementar sistema supervisório (estado do wifi, mqtt, controle, baterias, etc) (P5)
+*       - Implementar máquina de estados (P5)
+*            Modos execução, standby, init, reset, teste, etc
+*            Parada de emergência controlada em desconexões longas (timeout em stale setpoints, etc)
+*       - Timeout no setpoint de acordo com o modo de operação (P4)    
+*       - Normalizar saída do controle para duty (-1% ... 1%) (P2)
+*       - Eliminar a necessidade de variáveis globais (P2)
+*       - Clamp de segurança nas velocidades, rampa, aceleração (P1)
+*/
+
+
+//%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+//%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%  LIBRARIES
+
 #include <stdio.h>
 #include "driver/gpio.h" 
 #include "driver/gptimer.h"
@@ -8,13 +40,25 @@
 #include "freertos/task.h"
 #include "math.h"
 #include "nvs_flash.h"
+#include "driver/rmt_tx.h"
+#include "led_strip.h"
 #include "wifi.h"
 #include "MQTT_lib.h"
-
 #include "PID_control.h"
 
 //%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 //%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%  CONSTS
+
+// Gpio usado                  GPIO // Outras funções
+#define MOTOR_ESQ_A             41  // MTDI
+#define MOTOR_ESQ_B             42  // MTMS
+#define ENCODER_ESQ_A           1   // ADC_CH0 - T1
+#define ENCODER_ESQ_B           40  // SD_DATA - MTDO
+#define MOTOR_DIR_A             39  // SD_CLK - MTCK
+#define MOTOR_DIR_B             38  // SD_CMD
+#define ENCODER_DIR_A           47  // -
+#define ENCODER_DIR_B           21  // -
+#define WS2812_PIN              48  // WS2812
 
 // Cofiguração do pwm
 #define LEDC_MODE               LEDC_LOW_SPEED_MODE
@@ -27,15 +71,7 @@
 #define LEDC_CHANNEL_MDIRB      LEDC_CHANNEL_3
 #define ESP_INTR_FLAG_DEFAULT   0
 
-// Gpio usado
-#define MOTOR_ESQ_A             41  //4
-#define MOTOR_ESQ_B             42 //18
-#define ENCODER_ESQ_A           1 //16
-#define ENCODER_ESQ_B           40 //17
-#define MOTOR_DIR_A             14 //25
-#define MOTOR_DIR_B             47 //26
-#define ENCODER_DIR_A           18 //32
-#define ENCODER_DIR_B           8  //33
+#define WS2812_LED_NUM          1
 
 // Parâmetros de uso dos encoders
 #define BORDAS_POR_VOLTA        1496
@@ -46,9 +82,8 @@
 #define WHEEL_BASE              0.1113    // distância entre rodas
 
 // Parâmetros do controlador de velocidade dos motores
-// MELHORIA: normalizar saída do controle para duty (-1% ... 1%)
-#define PID_KP                  75//55*8 //5.0 // 25
-#define PID_KI                  300//300*8 //30.00 // 30
+#define PID_KP                  75
+#define PID_KI                  900
 #define PID_KD                  0.0
 #define PID_TAU                 0.05
 #define PID_LIM_MAX             (1023)
@@ -59,14 +94,19 @@
 
 static const char *TAG = "ROBOT";
 
-enum Mode
+typedef enum
 {
-    RESET,
-    CONTROL,
-    STANDBY
-};
+    STATE_INIT,
+    STATE_STANDBY,
+    STATE_TEST,
+    STATE_EXEC,
+    STATE_ERROR,
+    STATE_SAFE_STOP
+} system_state_t;
+system_state_t system_state = STATE_INIT;
 
-int operation_mode = RESET;
+static led_strip_handle_t led_strip;
+
 volatile int sinais_encoder_esq = 0, sinais_encoder_dir = 0;
 volatile float angular_speed_wheels[2] = {0.0f, 0.0f};
 volatile float pose[3] = {0.0f, 0.0f, 0.0f};
@@ -192,17 +232,13 @@ float angleWrap(float ang)
 // Função para setar o pwm dos motores
 void set_motor(int pwm, int channelA, int channelB)
 {
-    if(pwm >= 0)
-    {
+    if(pwm >= 0){
         ledc_set_duty(LEDC_MODE, channelA, pwm);
         ledc_set_duty(LEDC_MODE, channelB, 0);
-    }
-    else
-    {
+    } else {
         ledc_set_duty(LEDC_MODE, channelA, 0);
         ledc_set_duty(LEDC_MODE, channelB, abs(pwm));
     }
-
     ledc_update_duty(LEDC_MODE, channelA);
     ledc_update_duty(LEDC_MODE, channelB);
 }
@@ -221,13 +257,10 @@ static void IRAM_ATTR left_encoder_intr_handler(void *args)
     bool A = gpio_get_level(ENCODER_ESQ_A);
     bool B = gpio_get_level(ENCODER_ESQ_B);
     int pinNumber = (int)args;
-    if(pinNumber == ENCODER_ESQ_A)
-    {
+    if(pinNumber == ENCODER_ESQ_A){
         if(A == B) sinais_encoder_esq--;
         else sinais_encoder_esq++;
-    }
-    else
-    {
+    } else {
         if(A == B) sinais_encoder_esq++;
         else sinais_encoder_esq--;
     }
@@ -238,18 +271,14 @@ static void IRAM_ATTR right_encoder_intr_handler(void *args)
     bool A = gpio_get_level(ENCODER_DIR_A);
     bool B = gpio_get_level(ENCODER_DIR_B);
     int pinNumber = (int)args;
-    if(pinNumber == ENCODER_DIR_A)
-    {
+    if(pinNumber == ENCODER_DIR_A){
         if(A == B) sinais_encoder_dir--;
         else sinais_encoder_dir++;
-    }
-    else
-    {
+    } else {
         if(A == B) sinais_encoder_dir++;
         else sinais_encoder_dir--;
     }
 }
-
 
 static void IRAM_ATTR timer_isr_encoders(void *arg)
 {
@@ -321,7 +350,7 @@ void init_timers()
 //%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 //%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%  MQTT
 
-void vTaskPublishMQTT(void)
+void vTaskPublishMQTT(void *pvParameters)
 {
     float pose[3] = {0.0f, 0.0f, 0.0f};
     BaseType_t xHigherPriorityTaskWoken = pdTRUE;
@@ -350,6 +379,26 @@ void vTaskPublishMQTT(void)
             }
         }
         vTaskDelay(1);
+    }
+}
+
+// Conecta os módulos mqtt e wifi
+void vTaskMQTTManager(void *pvParameters){
+    EventGroupHandle_t wifi_evgrp = wifi_get_event_group();
+    for(;;){
+        xEventGroupWaitBits(wifi_evgrp,
+                                    BIT_WIFI_CONNECTED,
+                                    pdFALSE, pdFALSE,
+                                    portMAX_DELAY);
+        ESP_LOGI(TAG, "Wifi conectado, iniciando MQTT");
+        mqtt_start();
+        xEventGroupWaitBits(wifi_evgrp,
+                            BIT_WIFI_DISCONNECTED,
+                            pdTRUE, pdFALSE,
+                            portMAX_DELAY);
+        ESP_LOGW(TAG, "Wifi desconectado, parando MQTT");
+        mqtt_stop();
+        vTaskDelay(1000 / portTICK_PERIOD_MS);
     }
 }
 
@@ -403,7 +452,7 @@ void vTaskGetOdometry()
     }
 }
 
-void vTaskGetAngularSpeed(void)
+void vTaskGetAngularSpeed(void *pvParameters)
 {
     int pulses[2] = {0, 0};
     const float delta_phi = 2*M_PI / BORDAS_POR_VOLTA;
@@ -452,6 +501,103 @@ void vTaskUpdateControl(void)
     }
 }
 
+
+
+void ws2812_set_color(uint8_t r, uint8_t g, uint8_t b) {
+    led_strip_set_pixel(led_strip, 0, r, g, b);
+    led_strip_refresh(led_strip);
+}
+
+//%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+//%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% NOVAS ADIÇÕES
+void vTaskSystemSupervisor(void *pvParameters){
+
+    // EventGroupHandle_t wifi_evgrp = wifi_get_event_group();
+    TickType_t last_check = xTaskGetTickCount();
+
+    while (1)
+    {
+        switch (system_state)
+        {
+            case STATE_INIT:
+                ws2812_set_color(0, 0, 255);
+                // if (wifi_bits & BIT_WIFI_CONNECTED) {
+                if (wifi_is_connected()) {
+                    system_state = STATE_STANDBY;
+                    ESP_LOGI(TAG, "[SUPERVISOR] Transição para STANDBY");
+                }
+                break;
+
+            case STATE_STANDBY:
+                ws2812_set_color(0, 255, 0);
+                // Exemplo: aguarda comando para executar
+                // if (algum_comando_de_execucao) {
+                //     system_state = STATE_EXEC;
+                //     ESP_LOGI(TAG, "[SUPERVISOR] Transição para EXEC");
+                // }
+                break;
+
+            case STATE_EXEC:
+                ws2812_set_color(255, 255, 0);
+                // Supervisor deve monitorar timeout de controle
+                // if (timeout) {
+                //     system_state = STATE_SAFE_STOP;
+                //     ESP_LOGE(TAG, "[SUPERVISOR] Transição para SAFE_STOP");
+                // }
+                break;
+
+            case STATE_ERROR:
+                ws2812_set_color(255, 0, 0);
+                // Exemplo: tenta recuperação ou entra em SAFE_STOP
+                // if (recuperacao_possivel) {
+                //     system_state = STATE_STANDBY;
+                //     ESP_LOGI(TAG, "[SUPERVISOR] Recuperado para STANDBY");
+                // } else {
+                //     system_state = STATE_SAFE_STOP;
+                //     ESP_LOGW(TAG, "[SUPERVISOR] Transição para SAFE_STOP");
+                // }
+                break;
+
+            case STATE_SAFE_STOP:
+                ws2812_set_color(255, 100, 0);
+                // Controle zera a rotação dos motores e depois reseta memória de controle
+                
+                // Aguarda tomada de decisão
+                break;
+
+            case STATE_TEST:
+                ws2812_set_color(255, 0, 255);
+                // Executa rotinas de teste
+                break;
+        }
+
+        // Exemplo: reporta status periodicamente
+        if (xTaskGetTickCount() - last_check > 1000 / portTICK_PERIOD_MS) {
+            ESP_LOGI(TAG, "[SUPERVISOR] Estado atual: %d", system_state);
+            last_check = xTaskGetTickCount();
+        }
+        vTaskDelay(100 / portTICK_PERIOD_MS);
+    }
+}
+
+
+void ws2812_init(void) {
+    led_strip_config_t strip_config = {
+        .strip_gpio_num = 48,
+        .max_leds = 1,
+        .led_model = LED_MODEL_WS2812,
+        .flags.invert_out = false,
+    };
+
+    led_strip_rmt_config_t rmt_config = {
+        .clk_src = RMT_CLK_SRC_DEFAULT,
+        .resolution_hz = 10 * 1000 * 1000, // 10MHz
+        .mem_block_symbols = 64,
+    };
+
+    ESP_ERROR_CHECK(led_strip_new_rmt_device(&strip_config, &rmt_config, &led_strip));
+    led_strip_clear(led_strip);
+}
 //%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 //%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%  MAIN
 
@@ -469,9 +615,6 @@ void app_main(void)
     wifi_init_sta();    //Inicializando o WiFi. Função da Lib criada, wifi.h
     ESP_LOGI(TAG, "WiFi foi inicializado!");
 
-    mqtt_start();       //Iniciando conexão MQTT. Função da Lib criada, MQTT.h
-    ESP_LOGI(TAG, "MQTT foi inicializado!");
-
     xQueueEncoderTimer = xQueueCreate(50, sizeof(int) * 2);
     xBinarySemaphoreMQTTPublish = xSemaphoreCreateBinary();
     xQueueAngularSpeed = xQueueCreate(50, sizeof(float) * 2);
@@ -481,6 +624,7 @@ void app_main(void)
     ledc_init();
     encoder_pin_init();
     init_timers();
+    ws2812_init();
 
     PIDController_Init(&pid_left_motor);
     PIDController_Init(&pid_right_motor);
@@ -508,6 +652,13 @@ void app_main(void)
                 NULL,
                 3,
                 &xTaskHandleOdometry);
+    
+    xTaskCreate(vTaskMQTTManager,
+                "vTaskMQTTManager",
+                4096,
+                NULL,
+                2,
+                NULL);
 
     xTaskCreate(vTaskPublishMQTT,
                 "vTaskPublishMQTT",
@@ -523,44 +674,17 @@ void app_main(void)
                  3,
                  &xTaskHandleUpdateControl);
 
-    while(true)
+    xTaskCreate(vTaskSystemSupervisor,
+                "vTaskSystemSupervisor",
+                4096,
+                NULL,
+                5,
+                NULL);
+
+    for(;;)
     {
         // ESP_LOGI(TAG, "sinal de pwm: %f", pid_left_motor.output);
         vTaskDelay(100 / portTICK_PERIOD_MS);
     }
 }
 
-void change_operation_mode(int mode)
-{
-    switch(mode)
-    {
-        case RESET:
-        {
-            operation_mode = RESET;
-            pose[0] = 0.0f;
-            pose[1] = 0.0f;
-            pose[2] = 0.0f;
-            left_speed_setpoint = 0.0f;
-            right_speed_setpoint = 0.0f;
-            PIDController_Init(&pid_left_motor);
-            PIDController_Init(&pid_right_motor);
-            break;
-        }
-        
-        case CONTROL:
-        {
-            operation_mode = CONTROL;
-            PIDController_Init(&pid_left_motor);
-            PIDController_Init(&pid_right_motor);
-            break;
-        }
-
-        case STANDBY:
-        {
-            operation_mode = STANDBY;
-            PIDController_Init(&pid_left_motor);
-            PIDController_Init(&pid_right_motor);
-            break;
-        }
-    }
-}

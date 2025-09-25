@@ -18,7 +18,10 @@
   "idf.flashType": "UART",
   "files.associations": {
     "esp_log.h": "c",
-    "format": "c"
+    "format": "c",
+    "mqtt_lib.h": "c",
+    "wifi.h": "c",
+    "pid_control.h": "c"
   },
   "idf.pythonInstallPath": "C:\\Users\\brbzb\\.espressif\\tools\\idf-python\\3.11.2\\python.exe"
 }

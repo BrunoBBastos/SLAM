@@ -63,6 +63,10 @@ C:/GITHUB/SLAM/Firmware_Novo_Robo/build/esp-idf/spiffs/libspiffs.a
 C:/GITHUB/SLAM/Firmware_Novo_Robo/build/esp-idf/touch_element/libtouch_element.a
 C:/GITHUB/SLAM/Firmware_Novo_Robo/build/esp-idf/usb/libusb.a
 C:/GITHUB/SLAM/Firmware_Novo_Robo/build/esp-idf/wifi_provisioning/libwifi_provisioning.a
+C:/GITHUB/SLAM/Firmware_Novo_Robo/build/esp-idf/espp__logger/libespp__logger.a
+C:/GITHUB/SLAM/Firmware_Novo_Robo/build/esp-idf/espp__color/libespp__color.a
+C:/GITHUB/SLAM/Firmware_Novo_Robo/build/esp-idf/espp__neopixel/libespp__neopixel.a
+C:/GITHUB/SLAM/Firmware_Novo_Robo/build/esp-idf/espressif__led_strip/libespressif__led_strip.a
 C:/GITHUB/SLAM/Firmware_Novo_Robo/build/esp-idf/main/libmain.a
 C:/GITHUB/SLAM/Firmware_Novo_Robo/build/esp-idf/MQTT_lib/libMQTT_lib.a
 C:/GITHUB/SLAM/Firmware_Novo_Robo/build/esp-idf/PID_control/libPID_control.a

@@ -31,7 +31,7 @@ typedef struct {
     char password[64];
 } wifi_cred_t;
 
-wifi_cred_t wifi_cred_list[] = {
+wifi_cred_t wifi_cred_list[] = {    
     {"LARS-301-2.4GHz", "LARS@ROBOTICA"},
     {"LARS-301-5GHz", "LARS@ROBOTICA"},
     // {"SSIDqualquer", "password"},
@@ -39,12 +39,7 @@ wifi_cred_t wifi_cred_list[] = {
 
 #define WIFI_CRED_LIST_SIZE (sizeof(wifi_cred_list)/sizeof(wifi_cred_list[0]))
 
-
 #define EXAMPLE_ESP_MAXIMUM_RETRY   CONFIG_ESP_MAXIMUM_RETRY
-
-// Definição dos bits para o grupo de eventos (BIT0 e BIT1 já são macros, não precisamos realizar deslocamento de bits)
-// #define WIFI_CONNECTED_BIT  BIT0
-// #define WIFI_FAIL_BIT       BIT1
 
 // TAG para info
 static const char *TAG = "Wi-Fi";
@@ -53,11 +48,16 @@ static const char *TAG = "Wi-Fi";
 // static EventGroupHandle_t s_wifi_event_group;
 
 static EventGroupHandle_t s_wifi_evgrp = NULL;
-#define BIT_WIFI_STARTED      (1 << 0)
-#define BIT_WIFI_SCAN_DONE    (1 << 1)
-#define BIT_WIFI_CONNECTED    (1 << 2)
-#define BIT_WIFI_FAIL         (1 << 3)
-#define BIT_WIFI_DISCONNECTED (1 << 4)
+// localizados no wifi.h
+// #define BIT_WIFI_STARTED      (1 << 0)
+// #define BIT_WIFI_SCAN_DONE    (1 << 1)
+// #define BIT_WIFI_CONNECTED    (1 << 2)
+// #define BIT_WIFI_FAIL         (1 << 3)
+// #define BIT_WIFI_DISCONNECTED (1 << 4)
+
+EventGroupHandle_t wifi_get_event_group(void){
+    return s_wifi_evgrp;
+}
 
 // Estado e variáveis
 static int s_retry_num = 0; // Quantidade de tentativas para conexão
@@ -161,6 +161,7 @@ static void wifi_event_handler(void * arg, esp_event_base_t event_base, int32_t 
         ESP_LOGI(TAG, "EVENT: GOT_IP: " IPSTR, IP2STR(&event->ip_info.ip));
         s_retry_num = 0;
         xEventGroupSetBits(s_wifi_evgrp, BIT_WIFI_CONNECTED);
+        ESP_LOGI(TAG, "BIT_WIFI_CONNECTED setado!");
     }
 }
 
@@ -191,6 +192,11 @@ static bool select_best_ap(wifi_ap_record_t *ap_records, uint16_t ap_num, wifi_c
     return true;
 }
 
+bool wifi_is_connected(void){
+    EventBits_t bits = xEventGroupGetBits(s_wifi_evgrp);
+    return (bits & BIT_WIFI_CONNECTED) != 0;
+}
+
 static void wifi_manager_task(void *pvParameters){
     esp_err_t err;
     wifi_config_t wifi_config;
@@ -216,6 +222,8 @@ static void wifi_manager_task(void *pvParameters){
                 vTaskDelay(pdMS_TO_TICKS(2000));
                 continue;
             }
+            ESP_LOGI(TAG, "[MANAGER] Esperando SCAN_DONE...");
+
             // aguardar SCAN_DONE com timeout
             bits = xEventGroupWaitBits(s_wifi_evgrp, BIT_WIFI_SCAN_DONE, pdTRUE, pdFALSE, pdMS_TO_TICKS(WIFI_MANAGER_TIMEOUT_MS));
             if (!(bits & BIT_WIFI_SCAN_DONE)) {
@@ -223,6 +231,8 @@ static void wifi_manager_task(void *pvParameters){
                 vTaskDelay(pdMS_TO_TICKS(1000));
                 continue;
             }
+            ESP_LOGI(TAG, "[MANAGER] Scan finalizado, obtendo lista de APs...");
+
             // obter lista de APs (alocar na heap)
             uint16_t ap_num = 0;
             err = esp_wifi_scan_get_ap_num(&ap_num);
@@ -231,6 +241,8 @@ static void wifi_manager_task(void *pvParameters){
                 vTaskDelay(pdMS_TO_TICKS(1000));
                 continue;
             }
+
+
             wifi_ap_record_t *ap_records = calloc(ap_num, sizeof(wifi_ap_record_t));
             if (!ap_records) {
                 ESP_LOGE(TAG, "calloc falhou para ap_records");
@@ -256,7 +268,7 @@ static void wifi_manager_task(void *pvParameters){
             }
 
             // aplicar config e conectar
-            ESP_LOGI(TAG, "Setando config e conectando...");
+            ESP_LOGI(TAG, "[MANAGER] Setando config e conectando a SSID=%s...", wifi_config.sta.ssid);
             err = esp_wifi_set_config(WIFI_IF_STA, &wifi_config);
             if (err != ESP_OK) {
                 ESP_LOGE(TAG, "esp_wifi_set_config falhou: %s", esp_err_to_name(err));
@@ -271,8 +283,9 @@ static void wifi_manager_task(void *pvParameters){
                 continue;
             }
 
+            ESP_LOGI(TAG, "[MANAGER] Esperando BIT_WIFI_CONNECTED ou BIT_WIFI_DISCONNECTED...");
             // aguardar resultado (IP ou DISCONNECT)
-            bits = xEventGroupWaitBits(s_wifi_evgrp, BIT_WIFI_CONNECTED | BIT_WIFI_DISCONNECTED, pdTRUE, pdFALSE, pdMS_TO_TICKS(WIFI_MANAGER_CONNECT_WAIT_MS));
+            bits = xEventGroupWaitBits(s_wifi_evgrp, BIT_WIFI_CONNECTED | BIT_WIFI_DISCONNECTED, pdFALSE, pdFALSE, pdMS_TO_TICKS(WIFI_MANAGER_CONNECT_WAIT_MS));
             if (bits & BIT_WIFI_CONNECTED) {
                 ESP_LOGI(TAG, "Conectado com sucesso!");
                 // permanência: task pode encerrar ciclo de tentativa ou ficar verificando desconexões
@@ -301,8 +314,11 @@ void wifi_init(void){
 
     if(s_wifi_inited) return;
     s_wifi_inited = true;
+    if(!s_wifi_evgrp){
+        s_wifi_evgrp = xEventGroupCreate();
+    }
 
-    // init subsystems
+    // init subsistemas do driver
     ESP_ERROR_CHECK(esp_netif_init());
     ESP_ERROR_CHECK(esp_event_loop_create_default());
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
